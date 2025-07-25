@@ -1,0 +1,47 @@
+# Core dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# Database
+sqlalchemy[asyncio]==2.0.23
+asyncpg==0.29.0
+alembic==1.12.1
+
+# Authentication
+bcrypt==4.1.1
+pyjwt==2.8.0
+python-multipart==0.0.6
+
+# Dependency Injection
+dependency-injector==4.41.0
+
+# Redis
+redis==5.0.1
+aioredis==2.0.1
+
+# HTTP Client
+httpx==0.25.2
+
+# Workflow
+prefect==2.14.5
+
+# Web Scraping
+playwright==1.40.0
+beautifulsoup4==4.12.2
+lxml==4.9.3
+
+# Utils
+python-dotenv==1.0.0
+python-dateutil==2.8.2
+
+# Development
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+black==23.11.0
+flake8==6.1.0
+mypy==1.7.1
+types-redis==4.6.0.10
+types-requests==2.31.0.10

@@ -1,0 +1,1 @@
+# Shared Kernel - Common domain concepts and infrastructure
