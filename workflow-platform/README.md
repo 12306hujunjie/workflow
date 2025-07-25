@@ -1,5 +1,9 @@
 # Workflow Platform - 服务导向自动化工作流平台
 
+![Unit Tests](https://github.com/12306hujunjie/workflow/actions/workflows/unit-tests.yml/badge.svg)
+![Tests](https://github.com/12306hujunjie/workflow/actions/workflows/test.yml/badge.svg)
+[![codecov](https://codecov.io/gh/12306hujunjie/workflow/branch/master/graph/badge.svg)](https://codecov.io/gh/12306hujunjie/workflow)
+
 基于DDD架构和事件驱动设计的SaaS自动化工作流平台，支持多平台数据采集、用户订阅计费、智能代理池管理等功能。
 
 ## 技术栈

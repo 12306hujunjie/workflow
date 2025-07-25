@@ -34,19 +34,19 @@ class BaseEntity(BaseModel, ABC):
 class AggregateRoot(BaseEntity, ABC):
     """聚合根基类"""
     version: int = Field(default=1)
-    _domain_events: List[DomainEvent] = Field(default_factory=list, exclude=True)
+    domain_events: List[DomainEvent] = Field(default_factory=list, exclude=True)
     
     def record_event(self, event: DomainEvent) -> None:
         """记录领域事件"""
-        self._domain_events.append(event)
+        self.domain_events.append(event)
     
     def get_domain_events(self) -> List[DomainEvent]:
         """获取领域事件"""
-        return self._domain_events.copy()
+        return self.domain_events.copy()
     
     def clear_domain_events(self) -> None:
         """清空领域事件"""
-        self._domain_events.clear()
+        self.domain_events.clear()
     
     def increment_version(self) -> None:
         """增加版本号"""
