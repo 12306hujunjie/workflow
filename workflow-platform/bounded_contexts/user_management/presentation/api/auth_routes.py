@@ -59,7 +59,7 @@ async def register(
     
     return ApiResponse.success_response(
         data=user_data.model_dump(),
-        message="注册成功，请查收验证邮件"
+        message="注册成功"  # TODO: 暂时跳过邮箱验证提示
     )
 
 
@@ -173,6 +173,7 @@ async def verify_email(
     user_service: UserApplicationService = Depends(get_user_service)
 ) -> ApiResponse:
     """验证邮箱"""
+    # TODO: 邮箱验证功能暂时跳过，待后续实现
     await user_service.verify_email(request.token)
     
     return ApiResponse.success_response(
@@ -186,6 +187,7 @@ async def resend_verification(
     user_service: UserApplicationService = Depends(get_user_service)
 ) -> ApiResponse:
     """重新发送验证邮件"""
+    # TODO: 邮箱验证功能暂时跳过，待后续实现
     await user_service.resend_verification_email(user_id)
     
     return ApiResponse.success_response(

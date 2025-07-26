@@ -7,7 +7,7 @@ import secrets
 from ...domain.entities.user import User
 from ...domain.repositories.user_repository import UserRepository
 from ...domain.value_objects.user_profile import UserProfile
-from shared_kernel.domain.value_objects import UserStatus, UserRole
+from shared_kernel.domain.value_objects import UserStatus, UserRole, Username, Email
 from shared_kernel.application.exceptions import (
     UserAlreadyExistsException, UserNotFoundException, InvalidCredentialsException,
     ValidationException, AuthorizationException
@@ -68,9 +68,13 @@ class UserApplicationService:
         """用户登录"""
         # 根据用户名或邮箱查找用户
         if "@" in command.username_or_email:
-            user = await self._user_repository.get_by_email(command.username_or_email)
+            # 通过Email值对象处理邮箱，确保格式一致
+            email = Email(value=command.username_or_email)
+            user = await self._user_repository.get_by_email(email.value)
         else:
-            user = await self._user_repository.get_by_username(command.username_or_email)
+            # 通过Username值对象处理用户名，确保格式一致（转小写）
+            username = Username(value=command.username_or_email)
+            user = await self._user_repository.get_by_username(username.value)
         
         if not user:
             raise InvalidCredentialsException()
@@ -81,9 +85,10 @@ class UserApplicationService:
         
         # 检查用户是否可以登录
         if not user.can_login():
-            if user.status == UserStatus.PENDING_VERIFICATION:
-                raise AuthorizationException("账户待验证，请先验证邮箱")
-            elif user.status == UserStatus.BANNED:
+            # TODO: 暂时注释掉邮箱验证检查
+            # if user.status == UserStatus.PENDING_VERIFICATION:
+            #     raise AuthorizationException("账户待验证，请先验证邮箱")
+            if user.status == UserStatus.BANNED:
                 raise AuthorizationException("账户已被封禁")
             else:
                 raise AuthorizationException("账户状态异常，无法登录")
@@ -261,7 +266,7 @@ class UserApplicationService:
     
     async def verify_email(self, token: str) -> None:
         """验证邮箱"""
-        # TODO: 实现邮箱验证逻辑
+        # TODO: 邮箱验证功能暂时跳过，待后续实现
         # 1. 验证token是否有效
         # 2. 获取对应的用户
         # 3. 更新用户状态为已验证
@@ -273,7 +278,7 @@ class UserApplicationService:
         if not user:
             raise UserNotFoundException(user_id=str(user_id))
         
-        # TODO: 生成新的验证token并发送邮件
-        verification_token = secrets.token_urlsafe(32)
+        # TODO: 邮箱验证功能暂时跳过，待后续实现
+        # verification_token = secrets.token_urlsafe(32)
         # 保存token并发送邮件
         pass
