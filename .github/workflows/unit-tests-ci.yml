@@ -1,11 +1,11 @@
-name: Unit Tests
+name: 🧪 Unit Tests CI
 
 on:
   push:
     branches: [ master, main ]
     paths:
       - 'workflow-platform/**'
-      - '.github/workflows/unit-tests.yml'
+      - '.github/workflows/unit-tests-ci.yml'
   pull_request:
     branches: [ master, main ]
     paths:
@@ -45,8 +45,7 @@ jobs:
     - name: Create test environment file
       run: |
         cp .env.example .env
-        # 使用SQLite进行单元测试
-        echo "DATABASE_URL=sqlite+aiosqlite:///:memory:" >> .env
+        # 单元测试不需要真实数据库，使用mock
     
     - name: Run unit tests
       run: |

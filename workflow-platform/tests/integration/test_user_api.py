@@ -47,14 +47,14 @@ def create_test_services():
     
     # 创建应用服务工厂 - 返回实际的服务实例
     async def create_user_service():
-        session_factory = db_config.async_session_factory()
-        session = session_factory()
-        user_repository = SQLAlchemyUserRepository(session)
-        return UserApplicationService(
-            user_repository=user_repository,
-            password_service=password_service,
-            jwt_service=jwt_service
-        )
+        # 使用test_session fixture中的session
+        async with db_config.async_session_factory()() as session:
+            user_repository = SQLAlchemyUserRepository(session)
+            return UserApplicationService(
+                user_repository=user_repository,
+                password_service=password_service,
+                jwt_service=jwt_service
+            )
     
     return create_user_service
 

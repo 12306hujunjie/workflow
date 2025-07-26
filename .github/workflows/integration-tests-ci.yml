@@ -1,0 +1,91 @@
+name: 🔗 Integration Tests CI
+
+on:
+  push:
+    branches: [ master, main ]
+    paths:
+      - 'workflow-platform/**'
+      - '.github/workflows/integration-tests-ci.yml'
+  pull_request:
+    branches: [ master, main ]
+    paths:
+      - 'workflow-platform/**'
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: workflow_platform_test
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+    
+    defaults:
+      run:
+        working-directory: workflow-platform
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python 3.10
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.10'
+    
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('workflow-platform/requirements*.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install -r requirements-dev.txt
+    
+    - name: Create test environment file
+      run: |
+        cp .env.example .env
+        # 配置集成测试环境
+        echo "TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/workflow_platform_test" >> .env
+        echo "REDIS_URL=redis://localhost:6379/0" >> .env
+    
+    - name: Run integration tests
+      run: |
+        python -m pytest tests/integration -v --tb=short
+    
+    - name: Generate integration test coverage
+      run: |
+        python -m pytest tests/integration --cov=bounded_contexts --cov=shared_kernel --cov-report=xml --cov-report=term-missing
+    
+    - name: Upload integration test coverage
+      uses: codecov/codecov-action@v3
+      with:
+        token: ${{ secrets.CODECOV_TOKEN }}
+        file: ./workflow-platform/coverage.xml
+        flags: integration-tests
+        name: integration-tests-coverage
+        fail_ci_if_error: false
