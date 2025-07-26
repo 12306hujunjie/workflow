@@ -108,9 +108,9 @@ class JWTService:
             "jti": payload.get("jti")
         }
     
-    def refresh_access_token(self, refresh_token: str, username: str, role: str) -> str:
+    async def refresh_access_token(self, refresh_token: str, username: str, role: str) -> str:
         """使用刷新令牌创建新的访问令牌"""
-        payload = self.verify_refresh_token(refresh_token)
+        payload = await self.verify_refresh_token(refresh_token)
         return self.create_access_token(payload["user_id"], username, role)
     
     def get_token_expires_at(self, token: str) -> datetime:

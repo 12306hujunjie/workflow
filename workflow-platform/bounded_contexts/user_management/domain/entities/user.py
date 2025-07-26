@@ -19,6 +19,7 @@ class User(AggregateRoot):
     status: UserStatus = Field(default=UserStatus.PENDING_VERIFICATION)
     role: UserRole = Field(default=UserRole.USER)
     last_login_at: Optional[datetime] = None
+    password_changed_at: Optional[datetime] = None
     profile: Optional[UserProfile] = None
     
     def __init__(self, **data):
@@ -124,6 +125,7 @@ class User(AggregateRoot):
     def update_password(self, new_hashed_password: str) -> None:
         """更新密码"""
         self.hashed_password = HashedPassword(value=new_hashed_password)
+        self.password_changed_at = datetime.now(timezone.utc)
         self.increment_version()
     
     def update_profile(self, profile_data: Dict[str, Any]) -> None:

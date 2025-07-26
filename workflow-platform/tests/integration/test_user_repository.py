@@ -70,7 +70,7 @@ class TestSQLAlchemyUserRepository:
         
         assert user_model.status == UserStatus.ACTIVE.value
     
-    async def test_find_by_id(self, test_session):
+    async def test_get_by_id(self, test_session):
         """测试通过ID查找用户"""
         repository = SQLAlchemyUserRepository(test_session)
         
@@ -84,23 +84,23 @@ class TestSQLAlchemyUserRepository:
         await test_session.commit()
         
         # 通过ID查找
-        found_user = await repository.find_by_id(user.id)
+        found_user = await repository.get_by_id(user.id)
         
         assert found_user is not None
         assert found_user.id == user.id
         assert found_user.username.value == "testuser"
         assert found_user.email.value == "test@example.com"
     
-    async def test_find_by_id_not_found(self, test_session):
+    async def test_get_by_id_not_found(self, test_session):
         """测试查找不存在的用户"""
         repository = SQLAlchemyUserRepository(test_session)
         
         # 查找不存在的用户（使用一个不存在的整数ID）
-        found_user = await repository.find_by_id(999999)
+        found_user = await repository.get_by_id(999999)
         
         assert found_user is None
     
-    async def test_find_by_username(self, test_session):
+    async def test_get_by_username(self, test_session):
         """测试通过用户名查找用户"""
         repository = SQLAlchemyUserRepository(test_session)
         
@@ -114,12 +114,12 @@ class TestSQLAlchemyUserRepository:
         await test_session.commit()
         
         # 通过用户名查找
-        found_user = await repository.find_by_username("uniqueuser")
+        found_user = await repository.get_by_username("uniqueuser")
         
         assert found_user is not None
         assert found_user.username.value == "uniqueuser"
     
-    async def test_find_by_email(self, test_session):
+    async def test_get_by_email(self, test_session):
         """测试通过邮箱查找用户"""
         repository = SQLAlchemyUserRepository(test_session)
         
@@ -133,7 +133,7 @@ class TestSQLAlchemyUserRepository:
         await test_session.commit()
         
         # 通过邮箱查找
-        found_user = await repository.find_by_email("emailtest@example.com")
+        found_user = await repository.get_by_email("emailtest@example.com")
         
         assert found_user is not None
         assert found_user.email.value == "emailtest@example.com"

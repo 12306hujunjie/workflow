@@ -32,6 +32,9 @@ class SQLAlchemyUserRepository(UserRepository):
                 # 更新现有用户
                 db_user.username = user.username.value
                 db_user.email = user.email.value
+                # 只有当密码真正发生变化时才更新password_changed_at
+                if db_user.hashed_password != user.hashed_password.value:
+                    db_user.password_changed_at = user.password_changed_at
                 db_user.hashed_password = user.hashed_password.value
                 db_user.status = user.status.value
                 db_user.role = user.role.value
@@ -68,10 +71,6 @@ class SQLAlchemyUserRepository(UserRepository):
         # 返回更新后的领域对象
         return await self._model_to_domain(refreshed_user)
     
-    async def find_by_id(self, user_id: int) -> Optional[User]:
-        """根据ID查找用户"""
-        return await self.get_by_id(user_id)
-    
     async def get_by_id(self, user_id: int) -> Optional[User]:
         """根据ID获取用户"""
         stmt = select(UserModel).options(
@@ -83,10 +82,6 @@ class SQLAlchemyUserRepository(UserRepository):
         
         return await self._model_to_domain(db_user) if db_user else None
     
-    async def find_by_username(self, username: str) -> Optional[User]:
-        """根据用户名查找用户"""
-        return await self.get_by_username(username)
-    
     async def get_by_username(self, username: str) -> Optional[User]:
         """根据用户名获取用户"""
         stmt = select(UserModel).options(
@@ -97,10 +92,6 @@ class SQLAlchemyUserRepository(UserRepository):
         db_user = result.scalar_one_or_none()
         
         return await self._model_to_domain(db_user) if db_user else None
-    
-    async def find_by_email(self, email: str) -> Optional[User]:
-        """根据邮箱查找用户"""
-        return await self.get_by_email(email)
     
     async def get_by_email(self, email: str) -> Optional[User]:
         """根据邮箱获取用户"""
@@ -221,6 +212,7 @@ class SQLAlchemyUserRepository(UserRepository):
             "status": user.status.value,
             "role": user.role.value,
             "last_login_at": user.last_login_at,
+            "password_changed_at": user.password_changed_at,
             "created_at": user.created_at,
             "updated_at": user.updated_at
         }
@@ -252,6 +244,7 @@ class SQLAlchemyUserRepository(UserRepository):
             status=UserStatus(db_user.status),
             role=UserRole(db_user.role),
             last_login_at=db_user.last_login_at,
+            password_changed_at=db_user.password_changed_at,
             created_at=db_user.created_at,
             updated_at=db_user.updated_at,
             version=1,

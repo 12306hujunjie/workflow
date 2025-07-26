@@ -114,6 +114,32 @@ class UserApplicationService:
         """根据ID获取用户"""
         return await self._user_repository.get_by_id(user_id)
     
+    async def get_user_profile(self, user_id: int) -> Dict[str, Any]:
+        """获取用户资料"""
+        user = await self._user_repository.get_by_id(user_id)
+        if not user:
+            raise UserNotFoundException(user_id=str(user_id))
+        
+        profile_data = None
+        if user.profile:
+            profile_data = {
+                "display_name": user.profile.display_name,
+                "bio": user.profile.bio,
+                "avatar_url": user.profile.avatar_url
+            }
+        
+        return {
+            "id": str(user.id),
+            "username": user.username.value,
+            "email": user.email.value,
+            "status": user.status.value,
+            "role": user.role.value,
+            "last_login_at": user.last_login_at,
+            "created_at": user.created_at,
+            "updated_at": user.updated_at,
+            "profile": profile_data
+        }
+    
     async def update_user_profile(self, user_id: int, command: UpdateUserProfileCommand) -> User:
         """更新用户资料"""
         user = await self._user_repository.get_by_id(user_id)

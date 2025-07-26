@@ -66,13 +66,17 @@ class TestJWTService:
     def test_create_access_token(self):
         """测试创建访问令牌"""
         service = JWTService(secret_key="test-secret", algorithm="HS256")
-        user_id = "test-user-id"
+        user_id = 123
+        username = "testuser"
+        role = "user"
         
-        token = service.create_access_token(user_id=user_id)
+        token = service.create_access_token(user_id, username, role)
         
         # 解码验证
         payload = jwt.decode(token, "test-secret", algorithms=["HS256"])
-        assert payload["sub"] == user_id
+        assert payload["user_id"] == user_id
+        assert payload["username"] == username
+        assert payload["role"] == role
         assert payload["type"] == "access"
         assert "exp" in payload
         assert "iat" in payload
@@ -81,13 +85,13 @@ class TestJWTService:
     def test_create_refresh_token(self):
         """测试创建刷新令牌"""
         service = JWTService(secret_key="test-secret", algorithm="HS256")
-        user_id = "test-user-id"
+        user_id = 123
         
-        token = service.create_refresh_token(user_id=user_id)
+        token = service.create_refresh_token(user_id)
         
         # 解码验证
         payload = jwt.decode(token, "test-secret", algorithms=["HS256"])
-        assert payload["sub"] == user_id
+        assert payload["user_id"] == user_id
         assert payload["type"] == "refresh"
         assert "exp" in payload
     
@@ -98,9 +102,11 @@ class TestJWTService:
             algorithm="HS256",
             access_token_expire_minutes=60
         )
-        user_id = "test-user-id"
+        user_id = 123
+        username = "testuser"
+        role = "user"
         
-        token = service.create_access_token(user_id=user_id)
+        token = service.create_access_token(user_id, username, role)
         payload = jwt.decode(token, "test-secret", algorithms=["HS256"])
         
         # 验证过期时间约为60分钟后
@@ -114,13 +120,15 @@ class TestJWTService:
     def test_verify_token_valid(self):
         """测试验证有效令牌"""
         service = JWTService(secret_key="test-secret", algorithm="HS256")
-        user_id = "test-user-id"
+        user_id = 123
+        username = "testuser"
+        role = "user"
         
-        token = service.create_access_token(user_id=user_id)
-        payload = service.verify_token(token)
+        token = service.create_access_token(user_id, username, role)
+        payload = service.decode_token(token)
         
         assert payload is not None
-        assert payload["sub"] == user_id
+        assert payload["user_id"] == user_id
         assert payload["type"] == "access"
     
     def test_verify_token_expired(self):
@@ -130,13 +138,15 @@ class TestJWTService:
             algorithm="HS256",
             access_token_expire_minutes=-1  # 立即过期
         )
-        user_id = "test-user-id"
+        user_id = 123
+        username = "testuser"
+        role = "user"
         
-        token = service.create_access_token(user_id=user_id)
+        token = service.create_access_token(user_id, username, role)
         
-        # 验证过期令牌
-        payload = service.verify_token(token)
-        assert payload is None
+        # 验证过期令牌应该抛出异常
+        with pytest.raises(ValueError, match="令牌已过期"):
+            service.decode_token(token)
     
     def test_verify_token_invalid_signature(self):
         """测试验证无效签名的令牌"""
@@ -144,33 +154,36 @@ class TestJWTService:
         service2 = JWTService(secret_key="secret2", algorithm="HS256")
         
         # 使用service1创建令牌
-        token = service1.create_access_token(user_id="test-user-id")
+        token = service1.create_access_token(123, "testuser", "user")
         
-        # 使用service2验证（不同密钥）
-        payload = service2.verify_token(token)
-        assert payload is None
+        # 使用service2验证（不同密钥）应该抛出异常
+        with pytest.raises(ValueError, match="无效的令牌"):
+            service2.decode_token(token)
     
     def test_verify_token_malformed(self):
         """测试验证格式错误的令牌"""
         service = JWTService(secret_key="test-secret", algorithm="HS256")
         
-        # 验证格式错误的令牌
-        payload = service.verify_token("invalid.token.format")
-        assert payload is None
+        # 验证格式错误的令牌应该抛出异常
+        with pytest.raises(ValueError, match="无效的令牌"):
+            service.decode_token("invalid.token.format")
         
-        payload = service.verify_token("not-a-jwt-token")
-        assert payload is None
+        with pytest.raises(ValueError, match="无效的令牌"):
+            service.decode_token("not-a-jwt-token")
         
-        payload = service.verify_token("")
-        assert payload is None
+        with pytest.raises(ValueError, match="无效的令牌"):
+            service.decode_token("")
     
     def test_get_user_id_from_token(self):
         """测试从令牌获取用户ID"""
         service = JWTService(secret_key="test-secret", algorithm="HS256")
-        user_id = "test-user-id"
+        user_id = 123
+        username = "testuser"
+        role = "user"
         
-        token = service.create_access_token(user_id=user_id)
-        extracted_user_id = service.get_user_id_from_token(token)
+        token = service.create_access_token(user_id, username, role)
+        payload = service.decode_token(token)
+        extracted_user_id = payload.get("user_id")
         
         assert extracted_user_id == user_id
     
@@ -178,37 +191,43 @@ class TestJWTService:
         """测试从无效令牌获取用户ID"""
         service = JWTService(secret_key="test-secret", algorithm="HS256")
         
-        # 从无效令牌获取用户ID
-        user_id = service.get_user_id_from_token("invalid-token")
-        assert user_id is None
+        # 从无效令牌获取用户ID应该抛出异常
+        with pytest.raises(ValueError, match="无效的令牌"):
+            service.decode_token("invalid-token")
     
-    def test_refresh_access_token(self):
+    @pytest.mark.asyncio
+    async def test_refresh_access_token(self):
         """测试刷新访问令牌"""
         service = JWTService(secret_key="test-secret", algorithm="HS256")
-        user_id = "test-user-id"
+        user_id = 123
+        username = "testuser"
+        role = "user"
         
         # 创建刷新令牌
-        refresh_token = service.create_refresh_token(user_id=user_id)
+        refresh_token = service.create_refresh_token(user_id)
         
         # 使用刷新令牌获取新的访问令牌
-        new_access_token = service.refresh_access_token(refresh_token)
+        new_access_token = await service.refresh_access_token(refresh_token, username, role)
         
         assert new_access_token is not None
         
         # 验证新令牌
-        payload = service.verify_token(new_access_token)
+        payload = service.decode_token(new_access_token)
         assert payload is not None
-        assert payload["sub"] == user_id
+        assert payload["user_id"] == user_id
         assert payload["type"] == "access"
     
-    def test_refresh_access_token_with_access_token(self):
+    @pytest.mark.asyncio
+    async def test_refresh_access_token_with_access_token(self):
         """测试使用访问令牌刷新（应该失败）"""
         service = JWTService(secret_key="test-secret", algorithm="HS256")
-        user_id = "test-user-id"
+        user_id = 123
+        username = "testuser"
+        role = "user"
         
         # 创建访问令牌
-        access_token = service.create_access_token(user_id=user_id)
+        access_token = service.create_access_token(user_id, username, role)
         
-        # 尝试使用访问令牌刷新
-        new_token = service.refresh_access_token(access_token)
-        assert new_token is None
+        # 尝试使用访问令牌刷新应该抛出异常
+        with pytest.raises(ValueError, match="令牌类型错误"):
+            await service.refresh_access_token(access_token, username, role)

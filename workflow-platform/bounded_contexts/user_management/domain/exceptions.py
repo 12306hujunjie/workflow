@@ -10,43 +10,16 @@ class UserDomainError(Exception):
         self.code = code
 
 
-class UserNotFoundError(UserDomainError):
-    """用户不存在异常"""
-    def __init__(self, identifier: str):
-        super().__init__(f"用户不存在: {identifier}", "USER_NOT_FOUND")
-
-
-class UserAlreadyExistsError(UserDomainError):
-    """用户已存在异常"""
-    def __init__(self, message: str = "用户已存在"):
-        super().__init__(message, "USER_ALREADY_EXISTS")
-
-
-class InvalidCredentialsError(UserDomainError):
-    """无效凭证异常"""
-    def __init__(self, message: str = "用户名或密码错误"):
-        super().__init__(message, "INVALID_CREDENTIALS")
-
-
-class UserNotActiveError(UserDomainError):
-    """用户未激活异常"""
-    def __init__(self, message: str = "用户账户未激活"):
-        super().__init__(message, "USER_NOT_ACTIVE")
-
-
-class UserSuspendedError(UserDomainError):
-    """用户已暂停异常"""
-    def __init__(self, message: str = "用户账户已暂停"):
-        super().__init__(message, "USER_SUSPENDED")
-
+# TODO: 领域层异常暂时保留但不使用，等架构重构时再决定是否采用纯DDD异常模式
+# 当前实现直接在应用层使用应用异常，避免过度设计
 
 class InvalidPasswordError(UserDomainError):
-    """无效密码异常"""
+    """无效密码异常 - 纯领域概念"""
     def __init__(self, message: str):
         super().__init__(message, "INVALID_PASSWORD")
 
 
 class InvalidTokenError(UserDomainError):
-    """无效令牌异常"""
+    """无效令牌异常 - 纯领域概念"""
     def __init__(self, message: str = "无效的令牌"):
         super().__init__(message, "INVALID_TOKEN")

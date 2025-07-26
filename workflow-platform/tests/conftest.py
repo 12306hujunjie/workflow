@@ -121,12 +121,10 @@ def jwt_service():
 @pytest.fixture
 async def test_user(password_service):
     """创建测试用户"""
-    user = User(
-        username=Username(value="testuser"),
-        email=Email(value="test@example.com"),
-        hashed_password=HashedPassword(
-            value=password_service.hash_password("Test@123456")
-        )
+    user = User.create(
+        username="testuser",
+        email="test@example.com",
+        hashed_password=password_service.hash_password("Test@123456")
     )
     return user
 
@@ -135,9 +133,12 @@ async def test_user(password_service):
 def mock_user_repository():
     """创建mock用户仓储"""
     repository = AsyncMock()
-    repository.find_by_username = AsyncMock(return_value=None)
-    repository.find_by_email = AsyncMock(return_value=None)
-    repository.find_by_id = AsyncMock(return_value=None)
+    # 统一使用get_by_*方法名
+    repository.get_by_username = AsyncMock(return_value=None)
+    repository.get_by_email = AsyncMock(return_value=None)
+    repository.get_by_id = AsyncMock(return_value=None)
+    repository.exists_by_username = AsyncMock(return_value=False)
+    repository.exists_by_email = AsyncMock(return_value=False)
     repository.save = AsyncMock()
     repository.delete = AsyncMock()
     return repository

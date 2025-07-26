@@ -50,6 +50,16 @@ class UserRepository(ABC):
         pass
     
     @abstractmethod
-    async def delete(self, user_id: int) -> bool:
+    async def delete(self, user: User) -> bool:
         """删除用户"""
+        pass
+    
+    @abstractmethod
+    async def find_all(self, skip: int = 0, limit: int = 100) -> List[User]:
+        """查找所有用户"""
+        pass
+    
+    @abstractmethod
+    async def count(self) -> int:
+        """统计用户总数"""
         pass
