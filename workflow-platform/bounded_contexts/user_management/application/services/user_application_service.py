@@ -1,8 +1,8 @@
 """用户应用服务"""
 
+import secrets
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta, timezone
-import secrets
 
 from ...domain.entities.user import User
 from ...domain.repositories.user_repository import UserRepository
@@ -37,11 +37,11 @@ class UserApplicationService:
         """注册新用户"""
         # 验证用户名是否已存在
         if await self._user_repository.exists_by_username(command.username):
-            raise UserAlreadyExistsException(username=command.username)
+            raise UserAlreadyExistsException("username", command.username)
         
         # 验证邮箱是否已存在
         if await self._user_repository.exists_by_email(command.email):
-            raise UserAlreadyExistsException(email=command.email)
+            raise UserAlreadyExistsException("email", command.email)
         
         # 验证密码强度
         is_valid, message = self._password_service.validate_password_strength(command.password)
@@ -68,13 +68,11 @@ class UserApplicationService:
         """用户登录"""
         # 根据用户名或邮箱查找用户
         if "@" in command.username_or_email:
-            # 通过Email值对象处理邮箱，确保格式一致
-            email = Email(value=command.username_or_email)
-            user = await self._user_repository.get_by_email(email.value)
+            # 直接使用原始邮箱值进行查找
+            user = await self._user_repository.get_by_email(command.username_or_email)
         else:
-            # 通过Username值对象处理用户名，确保格式一致（转小写）
-            username = Username(value=command.username_or_email)
-            user = await self._user_repository.get_by_username(username.value)
+            # 直接使用原始用户名值进行查找
+            user = await self._user_repository.get_by_username(command.username_or_email)
         
         if not user:
             raise InvalidCredentialsException()
@@ -189,7 +187,7 @@ class UserApplicationService:
     async def refresh_token(self, refresh_token: str) -> Dict[str, Any]:
         """刷新访问令牌"""
         # 验证刷新令牌
-        payload = self._jwt_service.verify_refresh_token(refresh_token)
+        payload = await self._jwt_service.verify_refresh_token(refresh_token)
         user_id = payload["user_id"]
         
         # 获取用户信息
@@ -234,11 +232,29 @@ class UserApplicationService:
         
         return paginated_users, total
     
-    async def logout_user(self, user_id: int, token: str) -> None:
+    async def logout_user(self, user_id: int, access_token: str, refresh_token: Optional[str] = None) -> None:
         """用户登出"""
-        # TODO: 实现token黑名单逻辑
-        # 这里需要实现token黑名单机制
-        pass
+        # 验证access token是否有效
+        try:
+            payload = await self._jwt_service.verify_access_token(access_token)
+            if payload.get("user_id") != user_id:
+                raise AuthorizationException("Token用户ID不匹配")
+        except ValueError as e:
+            raise AuthorizationException(f"无效的access token: {str(e)}")
+        
+        # 将access token添加到黑名单
+        await self._jwt_service.blacklist_token(access_token)
+        
+        # 如果提供了refresh token，也将其添加到黑名单
+        if refresh_token:
+            try:
+                # 验证refresh token是否有效且属于同一用户
+                refresh_payload = await self._jwt_service.verify_refresh_token(refresh_token)
+                if refresh_payload.get("user_id") == user_id:
+                    await self._jwt_service.blacklist_token(refresh_token)
+            except ValueError:
+                # refresh token无效，忽略错误继续执行
+                pass
     
     async def forgot_password(self, email: str) -> str:
         """忘记密码 - 发送重置邮件"""

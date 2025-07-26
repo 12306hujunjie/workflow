@@ -2,34 +2,30 @@
 
 from typing import Optional
 from fastapi import APIRouter, Depends, Request
-from dependency_injector.wiring import inject, Provide
 
 from ..schemas.user_schemas import (
     RegisterUserRequest, UserLoginRequest, ForgotPasswordRequest, 
     ResetPasswordRequest, RefreshTokenRequest, EmailVerificationRequest,
-    LoginResponse, TokenResponse, MessageResponse, UserResponse, UserProfileResponse
+    LogoutRequest, LoginResponse, TokenResponse, MessageResponse, UserResponse, UserProfileResponse
 )
 from ...application.services.user_application_service import UserApplicationService
 from ...application.commands.user_commands import (
     RegisterUserCommand, LoginUserCommand, ForgotPasswordCommand, 
     ResetPasswordCommand
 )
+from ..dependencies import get_user_service
 from shared_kernel.application.api_response import ApiResponse
 from shared_kernel.application.exceptions import (
     UserAlreadyExistsException, InvalidCredentialsException,
     UserNotFoundException, ValidationException
 )
-from container import container
 from api_gateway.middleware.auth_middleware import get_current_user_id
 
 
 router = APIRouter(tags=["authentication"])
 
 
-@inject
-async def get_user_service() -> UserApplicationService:
-    """获取用户应用服务的依赖函数"""
-    return container.user_application_service()
+# 依赖注入函数已移至 dependencies.py 模块
 
 
 @router.post("/register", response_model=ApiResponse)
@@ -125,16 +121,17 @@ async def refresh_token(
 
 @router.post("/logout", response_model=ApiResponse)
 async def logout(
+    logout_request: LogoutRequest,
     request: Request,
     user_id: int = Depends(get_current_user_id),
     user_service: UserApplicationService = Depends(get_user_service)
 ) -> ApiResponse:
     """用户登出"""
-    # 获取当前token
+    # 获取当前access token
     authorization = request.headers.get("Authorization")
     if authorization and authorization.startswith("Bearer "):
-        token = authorization[7:]
-        await user_service.logout_user(user_id, token)
+        access_token = authorization[7:]
+        await user_service.logout_user(user_id, access_token, logout_request.refresh_token)
     
     return ApiResponse.success_response(
         message="登出成功"

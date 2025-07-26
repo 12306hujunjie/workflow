@@ -2,7 +2,6 @@
 
 from typing import Optional
 from fastapi import APIRouter, Depends
-from dependency_injector.wiring import inject, Provide
 
 from ..schemas.user_schemas import (
     UpdateProfileRequest, ChangePasswordRequest, UserResponse, 
@@ -12,25 +11,27 @@ from ...application.services.user_application_service import UserApplicationServ
 from ...application.commands.user_commands import (
     UpdateUserProfileCommand, ChangePasswordCommand
 )
+from ..dependencies import get_user_service
 from shared_kernel.application.api_response import ApiResponse
 from shared_kernel.application.exceptions import (
     UserNotFoundException, ValidationException
 )
-from container import container
 from api_gateway.middleware.auth_middleware import get_current_user_id
 
 
 router = APIRouter(tags=["user-management"])
 
 
+# 依赖注入函数已移至 dependencies.py 模块
+
+
 
 
 
 @router.get("/me", response_model=ApiResponse)
-@inject
 async def get_current_user(
     user_id: int = Depends(get_current_user_id),
-    user_service: UserApplicationService = Depends(Provide[container.user_application_service])
+    user_service: UserApplicationService = Depends(get_user_service)
 ) -> ApiResponse:
     """获取当前用户信息"""
     user = await user_service.get_user_by_id(user_id)
@@ -56,11 +57,10 @@ async def get_current_user(
 
 
 @router.put("/me/profile", response_model=ApiResponse)
-@inject
 async def update_profile(
     request: UpdateProfileRequest,
     user_id: int = Depends(get_current_user_id),
-    user_service: UserApplicationService = Depends(Provide[container.user_application_service])
+    user_service: UserApplicationService = Depends(get_user_service)
 ) -> ApiResponse:
     """更新用户资料"""
     command = UpdateUserProfileCommand(**request.model_dump(exclude_unset=True))
@@ -85,11 +85,10 @@ async def update_profile(
 
 
 @router.post("/me/change-password", response_model=ApiResponse)
-@inject
 async def change_password(
     request: ChangePasswordRequest,
     user_id: int = Depends(get_current_user_id),
-    user_service: UserApplicationService = Depends(Provide[container.user_application_service])
+    user_service: UserApplicationService = Depends(get_user_service)
 ) -> ApiResponse:
     """修改密码"""
     command = ChangePasswordCommand(

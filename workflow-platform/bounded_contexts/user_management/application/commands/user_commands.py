@@ -15,11 +15,11 @@ class RegisterUserCommand(BaseModel):
         import re
         if not re.match(r'^[a-zA-Z0-9_]+$', v):
             raise ValueError('用户名只能包含字母、数字和下划线')
-        return v.lower()
+        return v
     
     @validator('email')
     def validate_email(cls, v):
-        return v.lower()
+        return v
 
 
 class LoginUserCommand(BaseModel):
@@ -31,7 +31,7 @@ class LoginUserCommand(BaseModel):
     
     @validator('username_or_email')
     def validate_username_or_email(cls, v):
-        return v.lower()
+        return v
 
 
 class UpdateUserProfileCommand(BaseModel):
@@ -68,7 +68,7 @@ class ForgotPasswordCommand(BaseModel):
     
     @validator('email')
     def validate_email(cls, v):
-        return v.lower()
+        return v
 
 
 class VerifyEmailCommand(BaseModel):
@@ -82,4 +82,4 @@ class ResendVerificationEmailCommand(BaseModel):
     
     @validator('email')
     def validate_email(cls, v):
-        return v.lower()
+        return v

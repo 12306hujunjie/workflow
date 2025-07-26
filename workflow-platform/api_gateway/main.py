@@ -1,5 +1,7 @@
 """FastAPI主应用"""
 
+# urllib3 1.x 版本不需要特殊的SSL警告处理
+
 import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
@@ -34,6 +36,7 @@ async def lifespan(app: FastAPI):
         "bounded_contexts.user_management.presentation.api.user_routes",
         "bounded_contexts.user_management.presentation.api.auth_routes",
         "bounded_contexts.user_management.presentation.api.admin_routes",
+        "bounded_contexts.user_management.presentation.dependencies",
         "api_gateway.middleware.auth_middleware",
         __name__
     ])

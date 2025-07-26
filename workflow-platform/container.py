@@ -12,6 +12,7 @@ from bounded_contexts.user_management.infrastructure.repositories.sqlalchemy_use
 from bounded_contexts.user_management.infrastructure.auth.password_service import PasswordService
 from bounded_contexts.user_management.infrastructure.auth.jwt_service import JWTService
 from bounded_contexts.user_management.application.services.user_application_service import UserApplicationService
+from shared_kernel.infrastructure.redis_service import RedisService
 
 
 class Container(containers.DeclarativeContainer):
@@ -26,9 +27,10 @@ class Container(containers.DeclarativeContainer):
         database_url=config.provided.database_url
     )
     
-    # 数据库会话
-    async_session = providers.Factory(
-        lambda db_config=database_config: db_config().async_session_factory()
+    # Redis服务
+    redis_service = providers.Singleton(
+        RedisService,
+        redis_url=config.provided.redis_url
     )
     
     # 认证服务
@@ -42,20 +44,8 @@ class Container(containers.DeclarativeContainer):
         secret_key=config.provided.jwt_secret_key,
         algorithm=config.provided.jwt_algorithm,
         access_token_expire_minutes=config.provided.jwt_access_token_expire_minutes,
-        refresh_token_expire_days=config.provided.jwt_refresh_token_expire_days
-    )
-    
-    # 用户管理
-    user_repository = providers.Factory(
-        SQLAlchemyUserRepository,
-        session=async_session
-    )
-    
-    user_application_service = providers.Factory(
-        UserApplicationService,
-        user_repository=user_repository,
-        password_service=password_service,
-        jwt_service=jwt_service
+        refresh_token_expire_days=config.provided.jwt_refresh_token_expire_days,
+        redis_service=redis_service
     )
 
 

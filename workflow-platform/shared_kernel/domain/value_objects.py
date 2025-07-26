@@ -15,7 +15,7 @@ class Email(BaseModel):
         email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
         if not re.match(email_pattern, v):
             raise ValueError('Invalid email format')
-        return v.lower()
+        return v
     
     def __str__(self) -> str:
         return self.value
@@ -33,7 +33,7 @@ class Username(BaseModel):
         # 只允许字母、数字、下划线
         if not re.match(r'^[a-zA-Z0-9_]+$', v):
             raise ValueError('Username can only contain letters, numbers and underscores')
-        return v.lower()
+        return v
     
     def __str__(self) -> str:
         return self.value

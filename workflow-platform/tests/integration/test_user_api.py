@@ -88,7 +88,7 @@ def create_test_app():
     from bounded_contexts.user_management.presentation.api.admin_routes import router as admin_router
     
     # 使用 dependency_overrides 绕过容器依赖注入
-    from bounded_contexts.user_management.presentation.api.auth_routes import get_user_service
+    from bounded_contexts.user_management.presentation.dependencies import get_user_service
     
     # 覆盖依赖函数
     # 注意：create_user_service是一个async函数，需要直接作为依赖工厂使用

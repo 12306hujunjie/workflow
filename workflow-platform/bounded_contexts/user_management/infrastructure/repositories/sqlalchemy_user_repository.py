@@ -91,7 +91,7 @@ class SQLAlchemyUserRepository(UserRepository):
         """根据用户名获取用户"""
         stmt = select(UserModel).options(
             selectinload(UserModel.profile)
-        ).where(UserModel.username == username.lower())
+        ).where(func.lower(UserModel.username) == func.lower(username))
         
         result = await self._session.execute(stmt)
         db_user = result.scalar_one_or_none()
@@ -106,7 +106,7 @@ class SQLAlchemyUserRepository(UserRepository):
         """根据邮箱获取用户"""
         stmt = select(UserModel).options(
             selectinload(UserModel.profile)
-        ).where(UserModel.email == email.lower())
+        ).where(func.lower(UserModel.email) == func.lower(email))
         
         result = await self._session.execute(stmt)
         db_user = result.scalar_one_or_none()
@@ -116,7 +116,7 @@ class SQLAlchemyUserRepository(UserRepository):
     async def exists_by_username(self, username: str) -> bool:
         """检查用户名是否存在"""
         stmt = select(func.count(UserModel.id)).where(
-            UserModel.username == username.lower()
+            func.lower(UserModel.username) == func.lower(username)
         )
         result = await self._session.execute(stmt)
         count = result.scalar()
@@ -125,7 +125,7 @@ class SQLAlchemyUserRepository(UserRepository):
     async def exists_by_email(self, email: str) -> bool:
         """检查邮箱是否存在"""
         stmt = select(func.count(UserModel.id)).where(
-            UserModel.email == email.lower()
+            func.lower(UserModel.email) == func.lower(email)
         )
         result = await self._session.execute(stmt)
         count = result.scalar()

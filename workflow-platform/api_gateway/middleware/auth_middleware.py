@@ -15,7 +15,7 @@ class JWTBearer(HTTPBearer):
     def __init__(self, auto_error: bool = True):
         super(JWTBearer, self).__init__(auto_error=auto_error)
     
-    async def __call__(self, request: Request) -> Optional[HTTPAuthorizationCredentials]:
+    async def __call__(self, request: Request) -> Optional[dict]:
         credentials: HTTPAuthorizationCredentials = await super(JWTBearer, self).__call__(request)
         if credentials:
             if not credentials.scheme == "Bearer":
@@ -44,9 +44,10 @@ class JWTBearer(HTTPBearer):
     ) -> Optional[dict]:
         """验证JWT令牌"""
         try:
-            payload = jwt_service.verify_access_token(token)
+            payload = await jwt_service.verify_access_token(token)
             return payload
-        except Exception:
+        except Exception as e:
+            print(f"JWT verification error: {e}")
             return None
 
 

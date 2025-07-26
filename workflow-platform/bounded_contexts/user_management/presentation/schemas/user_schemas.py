@@ -55,6 +55,11 @@ class EmailVerificationRequest(BaseModel):
     token: str = Field(..., description="验证令牌")
 
 
+class LogoutRequest(BaseModel):
+    """登出请求"""
+    refresh_token: Optional[str] = Field(None, description="刷新令牌（可选）")
+
+
 class RegisterUserRequest(BaseModel):
     """用户注册请求（新版本）"""
     username: str = Field(..., min_length=3, max_length=50, description="用户名")
