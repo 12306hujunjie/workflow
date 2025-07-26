@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     smtp_from_email: Optional[str] = Field(default=None, env="SMTP_FROM_EMAIL")
     smtp_from_name: str = Field(default="Workflow Platform", env="SMTP_FROM_NAME")
     
+    # API配置
+    api_v1_prefix: str = Field(default="/api/v1", env="API_V1_PREFIX")
+    api_host: str = Field(default="0.0.0.0", env="API_HOST")
+    api_port: int = Field(default=8000, env="API_PORT")
+    
     # Prefect配置
     prefect_api_url: Optional[str] = Field(default=None, env="PREFECT_API_URL")
     prefect_api_key: Optional[str] = Field(default=None, env="PREFECT_API_KEY")

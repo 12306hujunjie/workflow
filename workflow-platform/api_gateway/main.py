@@ -74,9 +74,9 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
     
     # 注册路由
-    app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
-    app.include_router(user_router, prefix="/api/v1/users", tags=["User Management"])
-    app.include_router(admin_router, prefix="/api/v1/admin", tags=["Admin"])
+    app.include_router(auth_router, prefix=f"{settings.api_v1_prefix}/auth", tags=["Authentication"])
+    app.include_router(user_router, prefix=f"{settings.api_v1_prefix}/users", tags=["User Management"])
+    app.include_router(admin_router, prefix=f"{settings.api_v1_prefix}/admin", tags=["Admin"])
     
     # 健康检查端点
     @app.get("/health")
@@ -105,9 +105,10 @@ app = create_app()
 
 if __name__ == "__main__":
     import uvicorn
+    settings = Settings()
     uvicorn.run(
         app,
-        host="0.0.0.0",
-        port=8000,
+        host=settings.api_host,
+        port=settings.api_port,
         reload=False
     )

@@ -12,6 +12,7 @@ CREATE TABLE users (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     last_login_at TIMESTAMP WITH TIME ZONE,
+    password_changed_at TIMESTAMP WITH TIME ZONE,
     
     -- 创建索引
     CONSTRAINT users_username_length CHECK (LENGTH(username) >= 3),

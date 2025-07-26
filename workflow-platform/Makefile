@@ -40,7 +40,8 @@ clean: ## 清理临时文件
 	rm -rf *.egg-info
 
 run: ## 运行开发服务器
-	uvicorn api_gateway.main:app --reload --host 0.0.0.0 --port 8000
+	@if [ -f .env ]; then export $$(grep -v '^#' .env | xargs); fi && \
+	uvicorn api_gateway.main:app --reload --host $${API_HOST:-0.0.0.0} --port $${API_PORT:-8000}
 
 migrate: ## 运行数据库迁移
 	docker-compose exec -T postgres psql -U postgres -d workflow_platform -f /docker-entrypoint-initdb.d/user_management.sql

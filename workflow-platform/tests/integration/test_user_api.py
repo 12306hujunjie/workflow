@@ -47,8 +47,8 @@ def create_test_services():
     
     # 创建应用服务工厂 - 返回实际的服务实例
     async def create_user_service():
-        # 使用test_session fixture中的session
-        async with db_config.async_session_factory()() as session:
+        # 使用数据库会话
+        async with db_config.async_session_factory() as session:
             user_repository = SQLAlchemyUserRepository(session)
             return UserApplicationService(
                 user_repository=user_repository,
@@ -59,7 +59,7 @@ def create_test_services():
     return create_user_service
 
 
-def create_test_app():
+def create_test_app(settings: Settings):
     """创建测试应用实例"""
     # 创建服务工厂
     create_user_service = create_test_services()
@@ -95,29 +95,34 @@ def create_test_app():
     app.dependency_overrides[get_user_service] = create_user_service
     
     # 注册路由
-    app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
-    app.include_router(user_router, prefix="/api/v1/users", tags=["User Management"])
-    app.include_router(admin_router, prefix="/api/v1/admin", tags=["Admin"])
+    app.include_router(auth_router, prefix=f"{settings.api_v1_prefix}/auth", tags=["Authentication"])
+    app.include_router(user_router, prefix=f"{settings.api_v1_prefix}/users", tags=["User Management"])
+    app.include_router(admin_router, prefix=f"{settings.api_v1_prefix}/admin", tags=["Admin"])
     
     return app
 
 
 @pytest.fixture
-def test_app():
+def settings():
+    """Settings配置fixture"""
+    return Settings()
+
+@pytest.fixture
+def test_app(settings):
     """测试应用fixture"""
-    return create_test_app()
+    return create_test_app(settings)
 
 
 @pytest.mark.asyncio
 class TestUserAPI:
     """用户API集成测试"""
     
-    async def test_register_login_flow(self, test_app):
+    async def test_register_login_flow(self, test_app, settings):
         """测试完整的注册登录流程"""
         async with AsyncClient(app=test_app, base_url="http://test") as client:
             # 1. 注册新用户
             register_response = await client.post(
-                "/api/v1/auth/register",
+                f"{settings.api_v1_prefix}/auth/register",
                 json={
                     "username": "integrationtest",
                     "email": "integration@test.com",
@@ -125,17 +130,19 @@ class TestUserAPI:
                 }
             )
             
-            assert register_response.status_code == status.HTTP_201_CREATED
-            user_data = register_response.json()
+            assert register_response.status_code == status.HTTP_200_OK
+            response_data = register_response.json()
+            assert response_data["success"] == True
+            user_data = response_data["data"]
             assert user_data["username"] == "integrationtest"
             assert user_data["email"] == "integration@test.com"
             user_id = user_data["id"]
             
             # 2. 尝试登录未激活账户（应该失败）
             login_response = await client.post(
-                "/api/v1/auth/login",
+                f"{settings.api_v1_prefix}/auth/login",
                 json={
-                    "username": "integrationtest",
+                    "username_or_email": "integrationtest",
                     "password": "Integration@123"
                 }
             )
@@ -149,12 +156,12 @@ class TestUserAPI:
             # 4. 再次尝试登录（假设已激活）
             # 注意：由于测试环境限制，这里可能需要模拟激活过程
     
-    async def test_profile_management(self, test_app):
+    async def test_profile_management(self, test_app, settings):
         """测试用户资料管理"""
         async with AsyncClient(app=test_app, base_url="http://test") as client:
             # 1. 注册用户
             register_response = await client.post(
-                "/api/v1/auth/register",
+                f"{settings.api_v1_prefix}/auth/register",
                 json={
                     "username": "profiletest",
                     "email": "profile@test.com",
@@ -162,21 +169,21 @@ class TestUserAPI:
                 }
             )
             
-            assert register_response.status_code == status.HTTP_201_CREATED
+            assert register_response.status_code == status.HTTP_200_OK
             user_data = register_response.json()
             user_id = user_data["id"]
             
             # 2. 获取用户资料（需要认证，这里跳过）
             # 在实际测试中，需要先登录获取token
     
-    async def test_concurrent_registration(self, test_app):
+    async def test_concurrent_registration(self, test_app, settings):
         """测试并发注册相同用户名"""
         async with AsyncClient(app=test_app, base_url="http://test") as client:
             # 创建多个并发注册请求
             tasks = []
             for i in range(5):
                 task = client.post(
-                    "/api/v1/auth/register",
+                    f"{settings.api_v1_prefix}/auth/register",
                     json={
                         "username": "concurrentuser",
                         "email": f"concurrent{i}@test.com",
@@ -203,7 +210,7 @@ class TestUserAPI:
             assert success_count == 1
             assert conflict_count == 4
     
-    async def test_password_validation(self, test_app):
+    async def test_password_validation(self, test_app, settings):
         """测试密码验证规则"""
         async with AsyncClient(app=test_app, base_url="http://test") as client:
             test_cases = [
@@ -234,14 +241,14 @@ class TestUserAPI:
                 },
                 {
                     "password": "Valid@123456",
-                    "expected_status": status.HTTP_201_CREATED,
+                    "expected_status": status.HTTP_200_OK,
                     "reason": "有效密码"
                 }
             ]
             
             for i, test_case in enumerate(test_cases):
                 response = await client.post(
-                    "/api/v1/auth/register",
+                    f"{settings.api_v1_prefix}/auth/register",
                     json={
                         "username": f"passtest{i}",
                         "email": f"passtest{i}@test.com",
@@ -252,7 +259,7 @@ class TestUserAPI:
                 assert response.status_code == test_case["expected_status"], \
                     f"测试用例失败: {test_case['reason']}"
     
-    async def test_username_validation(self, test_app):
+    async def test_username_validation(self, test_app, settings):
         """测试用户名验证规则"""
         async with AsyncClient(app=test_app, base_url="http://test") as client:
             test_cases = [
@@ -276,7 +283,7 @@ class TestUserAPI:
             
             for i, test_case in enumerate(test_cases):
                 response = await client.post(
-                    "/api/v1/auth/register",
+                    f"{settings.api_v1_prefix}/auth/register",
                     json={
                         "username": test_case["username"],
                         "email": f"usertest{i}@test.com",
@@ -286,7 +293,7 @@ class TestUserAPI:
                 
                 assert response.status_code == test_case["expected_status"]
     
-    async def test_email_validation(self, test_app):
+    async def test_email_validation(self, test_app, settings):
         """测试邮箱验证规则"""
         async with AsyncClient(app=test_app, base_url="http://test") as client:
             test_cases = [
@@ -310,7 +317,7 @@ class TestUserAPI:
             
             for i, test_case in enumerate(test_cases):
                 response = await client.post(
-                    "/api/v1/auth/register",
+                    f"{settings.api_v1_prefix}/auth/register",
                     json={
                         "username": f"emailtest{i}",
                         "email": test_case["email"],

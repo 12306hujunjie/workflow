@@ -1,16 +1,12 @@
 """Pytest配置和fixtures"""
 
-import asyncio
 import pytest
 from typing import AsyncGenerator
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import AsyncMock
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 from container import Container
 from bounded_contexts.user_management.domain.entities.user import User
-from shared_kernel.domain.value_objects import (
-    Username, Email, HashedPassword
-)
 from bounded_contexts.user_management.infrastructure.models.user_models import (
     Base, UserModel, UserProfileModel, UserSessionModel, 
     UserLoginHistoryModel, PasswordResetTokenModel, EmailVerificationTokenModel
@@ -20,21 +16,11 @@ from bounded_contexts.user_management.infrastructure.auth.jwt_service import JWT
 from config.settings import Settings
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """创建事件循环"""
-    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
-    loop = asyncio.get_event_loop_policy().new_event_loop()
-    yield loop
-    loop.close()
-
-
-@pytest.fixture
+@pytest.fixture(scope="function")
 async def test_engine():
     """测试数据库引擎 - 使用PostgreSQL"""
     import os
     
-    # 使用PostgreSQL测试数据库，从.env文件读取配置
     database_url = os.getenv(
         "TEST_DATABASE_URL", 
         "postgresql+asyncpg://postgres:password@localhost:5432/workflow_platform_test"
@@ -42,47 +28,49 @@ async def test_engine():
     
     engine = create_async_engine(
         database_url,
-        echo=False
+        echo=False,
+        pool_size=1,
+        max_overflow=0,
+        pool_pre_ping=True,
+        pool_recycle=300
     )
     
-    # 确保所有模型类都被注册到metadata中
-    # 显式引用所有模型类以确保它们被注册
-    models = [
-        UserModel, UserProfileModel, UserSessionModel, 
-        UserLoginHistoryModel, PasswordResetTokenModel, EmailVerificationTokenModel
-    ]
-    
-    # 确保所有模型的表都在metadata中
-    for model in models:
-        model.__table__
-    
-    # 调试：打印所有表名
-    print(f"Tables in metadata: {list(Base.metadata.tables.keys())}")
-    
-    # 创建所有表
+    # 创建所有表（只在session开始时创建一次）
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     
     yield engine
     
-    # 清理 - 删除所有表
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-    
-    await engine.dispose()
+    # 清理 - 确保在事件循环关闭前完成
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+    except Exception:
+        pass  # 忽略清理时的错误
+    finally:
+        await engine.dispose()
 
 
-@pytest.fixture
+@pytest.fixture(scope="function")
 async def test_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
-    """创建测试数据库会话"""
+    """创建测试数据库会话 - 使用连接级别的事务"""
+    connection = await test_engine.connect()
+    transaction = await connection.begin()
+    
     async_session = async_sessionmaker(
-        test_engine,
+        bind=connection,
         class_=AsyncSession,
         expire_on_commit=False,
     )
     
-    async with async_session() as session:
+    session = async_session()
+    
+    try:
         yield session
+    finally:
+        await session.close()
+        await transaction.rollback()
+        await connection.close()
 
 
 @pytest.fixture

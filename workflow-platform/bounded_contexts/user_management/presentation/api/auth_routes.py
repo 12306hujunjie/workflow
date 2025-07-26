@@ -1,7 +1,7 @@
 """认证API路由"""
 
 from typing import Optional
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, status
 
 from ..schemas.user_schemas import (
     RegisterUserRequest, UserLoginRequest, ForgotPasswordRequest, 
