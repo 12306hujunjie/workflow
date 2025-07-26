@@ -22,7 +22,9 @@ class SQLAlchemyUserRepository(UserRepository):
         """保存用户"""
         # 查询现有用户
         if user.id:
-            stmt = select(UserModel).where(UserModel.id == user.id)
+            stmt = select(UserModel).options(
+                selectinload(UserModel.profile)
+            ).where(UserModel.id == user.id)
             result = await self._session.execute(stmt)
             db_user = result.scalar_one_or_none()
             
@@ -44,15 +46,31 @@ class SQLAlchemyUserRepository(UserRepository):
             db_user = self._domain_to_model(user)
             self._session.add(db_user)
         
+        await self._session.flush()  # 获取数据库分配的 id
+        
+        # 更新领域对象的 id（如果是新创建的）
+        if user.id is None:
+            user.id = db_user.id
+        
         # 处理用户资料
         if user.profile:
             await self._save_user_profile(db_user, user.profile)
         
-        await self._session.flush()
         await self._session.refresh(db_user)
         
+        # 重新查询以确保 profile 关系被正确预加载
+        stmt = select(UserModel).options(
+            selectinload(UserModel.profile)
+        ).where(UserModel.id == db_user.id)
+        result = await self._session.execute(stmt)
+        refreshed_user = result.scalar_one()
+        
         # 返回更新后的领域对象
-        return self._model_to_domain(db_user)
+        return await self._model_to_domain(refreshed_user)
+    
+    async def find_by_id(self, user_id: int) -> Optional[User]:
+        """根据ID查找用户"""
+        return await self.get_by_id(user_id)
     
     async def get_by_id(self, user_id: int) -> Optional[User]:
         """根据ID获取用户"""
@@ -63,7 +81,11 @@ class SQLAlchemyUserRepository(UserRepository):
         result = await self._session.execute(stmt)
         db_user = result.scalar_one_or_none()
         
-        return self._model_to_domain(db_user) if db_user else None
+        return await self._model_to_domain(db_user) if db_user else None
+    
+    async def find_by_username(self, username: str) -> Optional[User]:
+        """根据用户名查找用户"""
+        return await self.get_by_username(username)
     
     async def get_by_username(self, username: str) -> Optional[User]:
         """根据用户名获取用户"""
@@ -74,7 +96,11 @@ class SQLAlchemyUserRepository(UserRepository):
         result = await self._session.execute(stmt)
         db_user = result.scalar_one_or_none()
         
-        return self._model_to_domain(db_user) if db_user else None
+        return await self._model_to_domain(db_user) if db_user else None
+    
+    async def find_by_email(self, email: str) -> Optional[User]:
+        """根据邮箱查找用户"""
+        return await self.get_by_email(email)
     
     async def get_by_email(self, email: str) -> Optional[User]:
         """根据邮箱获取用户"""
@@ -85,7 +111,7 @@ class SQLAlchemyUserRepository(UserRepository):
         result = await self._session.execute(stmt)
         db_user = result.scalar_one_or_none()
         
-        return self._model_to_domain(db_user) if db_user else None
+        return await self._model_to_domain(db_user) if db_user else None
     
     async def exists_by_username(self, username: str) -> bool:
         """检查用户名是否存在"""
@@ -114,7 +140,11 @@ class SQLAlchemyUserRepository(UserRepository):
         result = await self._session.execute(stmt)
         db_users = result.scalars().all()
         
-        return [self._model_to_domain(db_user) for db_user in db_users]
+        result_users = []
+        for db_user in db_users:
+            domain_user = await self._model_to_domain(db_user)
+            result_users.append(domain_user)
+        return result_users
     
     async def count_by_status(self, status: str) -> int:
         """统计指定状态的用户数量"""
@@ -122,9 +152,9 @@ class SQLAlchemyUserRepository(UserRepository):
         result = await self._session.execute(stmt)
         return result.scalar() or 0
     
-    async def delete(self, user_id: int) -> bool:
+    async def delete(self, user: User) -> bool:
         """删除用户"""
-        stmt = select(UserModel).where(UserModel.id == user_id)
+        stmt = select(UserModel).where(UserModel.id == user.id)
         result = await self._session.execute(stmt)
         db_user = result.scalar_one_or_none()
         
@@ -133,16 +163,42 @@ class SQLAlchemyUserRepository(UserRepository):
             return True
         return False
     
+    async def find_all(self, skip: int = 0, limit: int = 100) -> List[User]:
+        """分页查找所有用户"""
+        stmt = select(UserModel).options(
+            selectinload(UserModel.profile)
+        ).order_by(UserModel.created_at.desc()).offset(skip).limit(limit)
+        
+        result = await self._session.execute(stmt)
+        db_users = result.scalars().all()
+        
+        result_users = []
+        for db_user in db_users:
+            domain_user = await self._model_to_domain(db_user)
+            result_users.append(domain_user)
+        return result_users
+    
+    async def count(self) -> int:
+        """统计用户总数"""
+        stmt = select(func.count(UserModel.id))
+        result = await self._session.execute(stmt)
+        return result.scalar() or 0
+    
     async def _save_user_profile(self, db_user: UserModel, profile: UserProfile) -> None:
         """保存用户资料"""
-        if db_user.profile:
+        # 查询现有的用户资料，避免直接访问关系属性
+        stmt = select(UserProfileModel).where(UserProfileModel.user_id == db_user.id)
+        result = await self._session.execute(stmt)
+        existing_profile = result.scalar_one_or_none()
+        
+        if existing_profile:
             # 更新现有资料
-            db_user.profile.display_name = profile.display_name
-            db_user.profile.avatar_url = profile.avatar_url
-            db_user.profile.bio = profile.bio
-            db_user.profile.timezone = profile.timezone
-            db_user.profile.language = profile.language
-            db_user.profile.notification_preferences = profile.notification_preferences
+            existing_profile.display_name = profile.display_name
+            existing_profile.avatar_url = profile.avatar_url
+            existing_profile.bio = profile.bio
+            existing_profile.timezone = profile.timezone
+            existing_profile.language = profile.language
+            existing_profile.notification_preferences = profile.notification_preferences
         else:
             # 创建新资料
             db_profile = UserProfileModel(
@@ -154,23 +210,28 @@ class SQLAlchemyUserRepository(UserRepository):
                 language=profile.language,
                 notification_preferences=profile.notification_preferences
             )
-            db_user.profile = db_profile
+            self._session.add(db_profile)
     
     def _domain_to_model(self, user: User) -> UserModel:
         """领域对象转换为数据库模型"""
-        return UserModel(
-            id=user.id,
-            username=user.username.value,
-            email=user.email.value,
-            hashed_password=user.hashed_password.value,
-            status=user.status.value,
-            role=user.role.value,
-            last_login_at=user.last_login_at,
-            created_at=user.created_at,
-            updated_at=user.updated_at
-        )
+        model_data = {
+            "username": user.username.value,
+            "email": user.email.value,
+            "hashed_password": user.hashed_password.value,
+            "status": user.status.value,
+            "role": user.role.value,
+            "last_login_at": user.last_login_at,
+            "created_at": user.created_at,
+            "updated_at": user.updated_at
+        }
+        
+        # 只有当user.id存在且不为None时才设置id
+        if user.id is not None:
+            model_data["id"] = user.id
+            
+        return UserModel(**model_data)
     
-    def _model_to_domain(self, db_user: UserModel) -> User:
+    async def _model_to_domain(self, db_user: UserModel) -> User:
         """数据库模型转换为领域对象"""
         profile = None
         if db_user.profile:
@@ -193,6 +254,7 @@ class SQLAlchemyUserRepository(UserRepository):
             last_login_at=db_user.last_login_at,
             created_at=db_user.created_at,
             updated_at=db_user.updated_at,
+            version=1,
             profile=profile
         )
         

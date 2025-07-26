@@ -1,10 +1,107 @@
-# Workflow Platform - 服务导向自动化工作流平台
+# Workflow Platform - 用户管理模块
 
-![Unit Tests](https://github.com/12306hujunjie/workflow/actions/workflows/unit-tests.yml/badge.svg)
-![Tests](https://github.com/12306hujunjie/workflow/actions/workflows/test.yml/badge.svg)
-[![codecov](https://codecov.io/gh/12306hujunjie/workflow/branch/master/graph/badge.svg)](https://codecov.io/gh/12306hujunjie/workflow)
+基于领域驱动设计(DDD)和清洁架构的用户管理系统，采用FastAPI框架构建。
 
-基于DDD架构和事件驱动设计的SaaS自动化工作流平台，支持多平台数据采集、用户订阅计费、智能代理池管理等功能。
+## 项目架构
+
+```
+workflow-platform/
+├── api_gateway/                    # API网关层
+│   └── main.py                    # FastAPI应用入口
+├── bounded_contexts/              # 限界上下文
+│   └── user_management/           # 用户管理上下文
+│       ├── application/           # 应用层
+│       │   └── services/          # 应用服务
+│       ├── domain/               # 领域层
+│       │   ├── entities/         # 实体
+│       │   ├── repositories/     # 仓储接口
+│       │   └── value_objects/    # 值对象
+│       ├── infrastructure/       # 基础设施层
+│       │   ├── auth/            # 认证服务
+│       │   └── repositories/    # 仓储实现
+│       └── presentation/        # 表示层
+│           ├── api/             # API路由
+│           └── schemas/         # 数据模型
+├── shared_kernel/               # 共享内核
+│   ├── application/            # 共享应用层组件
+│   │   ├── api_response.py     # 统一API响应格式
+│   │   ├── exceptions.py       # 自定义异常
+│   │   └── exception_handlers.py # 全局异常处理
+│   ├── domain/                 # 共享领域组件
+│   └── infrastructure/         # 共享基础设施
+├── config/                     # 配置
+├── migrations/                 # 数据库迁移
+└── container.py               # 依赖注入容器
+```
+
+## 核心特性
+
+### 1. 统一API响应格式
+
+所有API响应都遵循统一的格式：
+
+```json
+{
+  "success": true,
+  "data": {...},
+  "error": null,
+  "message": "操作成功"
+}
+```
+
+错误响应：
+```json
+{
+  "success": false,
+  "data": null,
+  "error": "USER_NOT_FOUND",
+  "message": "用户不存在"
+}
+```
+
+### 2. 分离的API路由
+
+- **认证API** (`/api/v1/auth`): 用户注册、登录、token刷新等
+- **用户管理API** (`/api/v1/users`): 用户信息管理、个人资料更新等
+- **管理员API** (`/api/v1/admin`): 用户管理、统计信息等
+
+### 3. 全局异常处理
+
+- 自定义异常类型
+- 统一错误响应格式
+- 详细的错误代码和消息
+
+### 4. 依赖注入
+
+使用dependency-injector实现松耦合的依赖管理。
+
+## API端点
+
+### 认证相关 (`/api/v1/auth`)
+
+- `POST /register` - 用户注册
+- `POST /login` - 用户登录
+- `POST /refresh` - 刷新token
+- `POST /logout` - 用户登出
+- `POST /forgot-password` - 忘记密码
+- `POST /reset-password` - 重置密码
+- `POST /verify-email` - 邮箱验证
+- `POST /resend-verification` - 重发验证邮件
+
+### 用户管理 (`/api/v1/users`)
+
+- `GET /me` - 获取当前用户信息
+- `PUT /me/profile` - 更新用户资料
+- `POST /me/change-password` - 修改密码
+
+### 管理员功能 (`/api/v1/admin`)
+
+- `GET /users` - 获取用户列表
+- `GET /users/{user_id}` - 获取用户详情
+- `POST /users/{user_id}/activate` - 激活用户
+- `POST /users/{user_id}/deactivate` - 停用用户
+- `POST /users/{user_id}/ban` - 封禁用户
+- `GET /users/stats` - 获取用户统计
 
 ## 技术栈
 

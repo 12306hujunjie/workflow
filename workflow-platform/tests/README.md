@@ -129,8 +129,8 @@ make coverage       # 生成覆盖率报告
    - 检查`PYTHONPATH`设置
 
 2. **数据库连接错误**
-   - 测试使用SQLite内存数据库
-   - 确保已安装`aiosqlite`
+   - 测试使用PostgreSQL测试数据库
+- 确保已安装`asyncpg`并配置PostgreSQL
 
 3. **异步测试问题**
    - 使用`@pytest.mark.asyncio`装饰器

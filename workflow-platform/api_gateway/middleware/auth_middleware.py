@@ -1,7 +1,7 @@
 """认证中间件"""
 
 from typing import Optional
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request, status, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from dependency_injector.wiring import Provide, inject
 
@@ -53,23 +53,21 @@ class JWTBearer(HTTPBearer):
 jwt_bearer = JWTBearer()
 
 
-@inject
 async def get_current_user_id(
-    credentials: dict = jwt_bearer,
+    credentials: dict = Depends(jwt_bearer),
 ) -> int:
     """获取当前用户ID"""
     return credentials["user_id"]
 
 
-@inject  
 async def get_current_user_role(
-    credentials: dict = jwt_bearer,
+    credentials: dict = Depends(jwt_bearer),
 ) -> str:
     """获取当前用户角色"""
     return credentials["role"]
 
 
-async def require_admin(role: str = get_current_user_role) -> str:
+async def require_admin(role: str = Depends(get_current_user_role)) -> str:
     """需要管理员权限"""
     if role != "admin":
         raise HTTPException(

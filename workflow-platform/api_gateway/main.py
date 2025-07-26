@@ -1,14 +1,22 @@
 """FastAPI主应用"""
 
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from dependency_injector.wiring import inject, Provide
+from dotenv import load_dotenv
+
+# 显式加载.env文件
+load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 
 from config.settings import Settings
 from container import Container, init_container
 from bounded_contexts.user_management.presentation.api.user_routes import router as user_router
+from bounded_contexts.user_management.presentation.api.auth_routes import router as auth_router
+from bounded_contexts.user_management.presentation.api.admin_routes import router as admin_router
+from shared_kernel.application.exception_handlers import register_exception_handlers
 from shared_kernel.infrastructure.database.async_session import db_config
 
 
@@ -24,6 +32,8 @@ async def lifespan(app: FastAPI):
     # 连接依赖注入
     container.wire(modules=[
         "bounded_contexts.user_management.presentation.api.user_routes",
+        "bounded_contexts.user_management.presentation.api.auth_routes",
+        "bounded_contexts.user_management.presentation.api.admin_routes",
         "api_gateway.middleware.auth_middleware",
         __name__
     ])
@@ -57,31 +67,13 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     
-    # 全局异常处理
-    @app.exception_handler(ValueError)
-    async def value_error_handler(request: Request, exc: ValueError):
-        return JSONResponse(
-            status_code=400,
-            content={
-                "success": False,
-                "error": "BAD_REQUEST",
-                "message": str(exc)
-            }
-        )
-    
-    @app.exception_handler(Exception)
-    async def general_exception_handler(request: Request, exc: Exception):
-        return JSONResponse(
-            status_code=500,
-            content={
-                "success": False,
-                "error": "INTERNAL_SERVER_ERROR",
-                "message": "An unexpected error occurred"
-            }
-        )
+    # 注册全局异常处理器
+    register_exception_handlers(app)
     
     # 注册路由
-    app.include_router(user_router, prefix="/api/v1")
+    app.include_router(auth_router, prefix="/api/v1/auth", tags=["Authentication"])
+    app.include_router(user_router, prefix="/api/v1/users", tags=["User Management"])
+    app.include_router(admin_router, prefix="/api/v1/admin", tags=["Admin"])
     
     # 健康检查端点
     @app.get("/health")
@@ -111,8 +103,8 @@ app = create_app()
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
-        "main:app",
+        app,
         host="0.0.0.0",
         port=8000,
-        reload=True
+        reload=False
     )

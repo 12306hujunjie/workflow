@@ -5,14 +5,16 @@ import pytest
 from typing import AsyncGenerator
 from unittest.mock import Mock, AsyncMock
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.pool import NullPool
 
 from container import Container
 from bounded_contexts.user_management.domain.entities.user import User
 from shared_kernel.domain.value_objects import (
     Username, Email, HashedPassword
 )
-from bounded_contexts.user_management.infrastructure.models.user_models import Base
+from bounded_contexts.user_management.infrastructure.models.user_models import (
+    Base, UserModel, UserProfileModel, UserSessionModel, 
+    UserLoginHistoryModel, PasswordResetTokenModel, EmailVerificationTokenModel
+)
 from bounded_contexts.user_management.infrastructure.auth.password_service import PasswordService
 from bounded_contexts.user_management.infrastructure.auth.jwt_service import JWTService
 from config.settings import Settings
@@ -21,23 +23,51 @@ from config.settings import Settings
 @pytest.fixture(scope="session")
 def event_loop():
     """创建事件循环"""
+    asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
     loop = asyncio.get_event_loop_policy().new_event_loop()
     yield loop
     loop.close()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 async def test_engine():
-    """创建测试数据库引擎"""
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        poolclass=NullPool,
+    """测试数据库引擎 - 使用PostgreSQL"""
+    import os
+    
+    # 使用PostgreSQL测试数据库，从.env文件读取配置
+    database_url = os.getenv(
+        "TEST_DATABASE_URL", 
+        "postgresql+asyncpg://postgres:password@localhost:5432/workflow_platform_test"
     )
     
+    engine = create_async_engine(
+        database_url,
+        echo=False
+    )
+    
+    # 确保所有模型类都被注册到metadata中
+    # 显式引用所有模型类以确保它们被注册
+    models = [
+        UserModel, UserProfileModel, UserSessionModel, 
+        UserLoginHistoryModel, PasswordResetTokenModel, EmailVerificationTokenModel
+    ]
+    
+    # 确保所有模型的表都在metadata中
+    for model in models:
+        model.__table__
+    
+    # 调试：打印所有表名
+    print(f"Tables in metadata: {list(Base.metadata.tables.keys())}")
+    
+    # 创建所有表
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     
     yield engine
+    
+    # 清理 - 删除所有表
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
     
     await engine.dispose()
 
@@ -53,7 +83,6 @@ async def test_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
     
     async with async_session() as session:
         yield session
-        await session.rollback()
 
 
 @pytest.fixture
@@ -63,7 +92,7 @@ def mock_container():
     
     # Mock配置
     container.config.override(Settings(
-        database_url="sqlite+aiosqlite:///:memory:",
+        database_url="postgresql+asyncpg://postgres:password@localhost:5432/workflow_platform_test",
         jwt_secret_key="test-secret-key",
         jwt_algorithm="HS256",
         jwt_expire_minutes=30,

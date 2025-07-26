@@ -28,7 +28,7 @@ class Container(containers.DeclarativeContainer):
     
     # 数据库会话
     async_session = providers.Factory(
-        lambda: database_config().async_session_factory()
+        lambda db_config=database_config: db_config().async_session_factory()
     )
     
     # 认证服务
@@ -65,5 +65,5 @@ container = Container()
 
 def init_container() -> Container:
     """初始化容器"""
-    container.config.from_dict(get_settings().dict())
+    # 直接使用settings实例，不需要from_dict
     return container

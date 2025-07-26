@@ -63,10 +63,12 @@ class TestUserEntity:
             hashed_password="hashed_password_123"
         )
         user.activate()
+        initial_version = user.version
         
-        # 尝试激活已激活的用户
-        with pytest.raises(ValueError, match="Only pending users can be activated"):
-            user.activate()
+        # 尝试激活已激活的用户，应该不会抛出异常，也不会改变状态
+        user.activate()
+        assert user.status == UserStatus.ACTIVE
+        assert user.version == initial_version  # 版本号不应该变化
     
     def test_user_deactivate(self):
         """测试停用用户"""

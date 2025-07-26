@@ -9,7 +9,7 @@ from bounded_contexts.user_management.application.services.user_application_serv
     UserApplicationService
 )
 from bounded_contexts.user_management.application.commands.user_commands import (
-    RegisterUserCommand, LoginCommand, UpdateProfileCommand, ChangePasswordCommand
+    RegisterUserCommand, LoginUserCommand, UpdateUserProfileCommand, ChangePasswordCommand
 )
 from bounded_contexts.user_management.domain.entities.user import User
 from shared_kernel.domain.value_objects import (
@@ -124,8 +124,8 @@ class TestUserApplicationService:
             jwt_service=jwt_service
         )
         
-        command = LoginCommand(
-            username="testuser",
+        command = LoginUserCommand(
+            username_or_email="testuser",
             password="Test@123456",
             ip_address="192.168.1.1",
             user_agent="Mozilla/5.0"
@@ -161,8 +161,8 @@ class TestUserApplicationService:
             jwt_service=jwt_service
         )
         
-        command = LoginCommand(
-            username="nonexistent",
+        command = LoginUserCommand(
+            username_or_email="nonexistent",
             password="Test@123456",
             ip_address="192.168.1.1",
             user_agent="Mozilla/5.0"
@@ -184,8 +184,8 @@ class TestUserApplicationService:
             jwt_service=jwt_service
         )
         
-        command = LoginCommand(
-            username="testuser",
+        command = LoginUserCommand(
+            username_or_email="testuser",
             password="WrongPassword123!",
             ip_address="192.168.1.1",
             user_agent="Mozilla/5.0"
@@ -206,8 +206,8 @@ class TestUserApplicationService:
             jwt_service=jwt_service
         )
         
-        command = LoginCommand(
-            username="testuser",
+        command = LoginUserCommand(
+            username_or_email="testuser",
             password="Test@123456",
             ip_address="192.168.1.1",
             user_agent="Mozilla/5.0"
@@ -263,10 +263,8 @@ class TestUserApplicationService:
             jwt_service=jwt_service
         )
         
-        command = UpdateProfileCommand(
-            user_id=test_user.id,
-            full_name="Updated Name",
-            phone="+1234567890",
+        command = UpdateUserProfileCommand(
+            display_name="Updated Name",
             bio="Updated bio"
         )
         
@@ -274,8 +272,7 @@ class TestUserApplicationService:
         result = await service.update_profile(command)
         
         # 验证
-        assert result["profile"]["full_name"] == "Updated Name"
-        assert result["profile"]["phone"] == "+1234567890"
+        assert result["profile"]["display_name"] == "Updated Name"
         assert result["profile"]["bio"] == "Updated bio"
         
         # 验证调用
@@ -294,7 +291,6 @@ class TestUserApplicationService:
         )
         
         command = ChangePasswordCommand(
-            user_id=test_user.id,
             old_password="Test@123456",
             new_password="NewTest@123456"
         )
@@ -321,7 +317,6 @@ class TestUserApplicationService:
         )
         
         command = ChangePasswordCommand(
-            user_id=test_user.id,
             old_password="WrongOldPassword@123",
             new_password="NewTest@123456"
         )

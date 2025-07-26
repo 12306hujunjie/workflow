@@ -1,13 +1,13 @@
 """异步数据库会话管理"""
 
 from typing import AsyncGenerator
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 import os
 
 
+# SQLAlchemy基础模型类
 class Base(DeclarativeBase):
-    """SQLAlchemy基础模型类"""
     pass
 
 
@@ -19,16 +19,19 @@ class DatabaseConfig:
             "DATABASE_URL", 
             "postgresql+asyncpg://postgres:password@localhost:5432/workflow_platform"
         )
-        self.engine = create_async_engine(
-            self.database_url,
-            echo=os.getenv("DB_ECHO", "false").lower() == "true",
-            future=True,
-            pool_size=10,
-            max_overflow=20,
-            pool_pre_ping=True,
-            pool_recycle=3600
-        )
-        self.async_session_factory = async_sessionmaker(
+        
+        # PostgreSQL数据库引擎参数
+        engine_kwargs = {
+            "echo": os.getenv("DB_ECHO", "false").lower() == "true",
+            "future": True,
+            "pool_pre_ping": True,
+            "pool_size": 10,
+            "max_overflow": 20,
+            "pool_recycle": 3600
+        }
+        
+        self.engine = create_async_engine(self.database_url, **engine_kwargs)
+        self.async_session_factory = sessionmaker(
             self.engine,
             class_=AsyncSession,
             expire_on_commit=False

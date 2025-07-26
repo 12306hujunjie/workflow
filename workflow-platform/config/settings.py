@@ -2,7 +2,8 @@
 
 import os
 from typing import Optional
-from pydantic import BaseSettings, Field
+from pydantic import Field
+from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
@@ -37,7 +38,7 @@ class Settings(BaseSettings):
     
     # CORS配置
     cors_allowed_origins: list[str] = Field(
-        default=["http://localhost:3000", "http://localhost:8080"],
+        default=["http://localhost:3000", "http://localhost:8080", "http://localhost:5173"],
         env="CORS_ALLOWED_ORIGINS"
     )
     
@@ -54,7 +55,7 @@ class Settings(BaseSettings):
     prefect_api_key: Optional[str] = Field(default=None, env="PREFECT_API_KEY")
     
     class Config:
-        env_file = ".env"
+        env_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env")
         env_file_encoding = "utf-8"
 
 

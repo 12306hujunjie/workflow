@@ -50,6 +50,18 @@ class RefreshTokenRequest(BaseModel):
     refresh_token: str = Field(..., description="刷新令牌")
 
 
+class EmailVerificationRequest(BaseModel):
+    """邮箱验证请求"""
+    token: str = Field(..., description="验证令牌")
+
+
+class RegisterUserRequest(BaseModel):
+    """用户注册请求（新版本）"""
+    username: str = Field(..., min_length=3, max_length=50, description="用户名")
+    email: EmailStr = Field(..., description="邮箱地址")
+    password: str = Field(..., min_length=8, description="密码")
+
+
 class UserProfileResponse(BaseModel):
     """用户资料响应"""
     display_name: Optional[str] = None
@@ -77,6 +89,9 @@ class UserResponse(BaseModel):
     
     class Config:
         from_attributes = True
+        json_encoders = {
+            datetime: lambda v: v.isoformat() if v else None
+        }
 
 
 class UserListResponse(BaseModel):
