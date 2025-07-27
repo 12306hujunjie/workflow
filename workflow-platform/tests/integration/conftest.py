@@ -1,122 +1,74 @@
-"""集成测试配置和fixtures"""
-import sys
+"""集成测试专用配置文件
 
-# macOS 下用 pytest-asyncio 或 asyncio 运行异步测试时，事件循环策略与信号处理不兼容，此处修复
-if sys.platform == "darwin":
-    import asyncio
-    try:
-        import uvloop
-        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-    except ImportError:
-        asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
-
-from contextlib import asynccontextmanager
-from typing import AsyncGenerator
+集成测试需要真实的外部依赖（如数据库、Redis等）来验证组件间的交互。
+这个配置文件提供了集成测试所需的真实服务连接和配置。
+"""
 
 import pytest
-from fastapi import FastAPI
-from httpx import AsyncClient
-from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from config.settings import Settings
-from shared_kernel.application.exception_handlers import register_exception_handlers
-from tests.conftest import test_session as base_test_session, settings as base_settings
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 
 
-def create_test_services(settings: Settings):
-    """创建测试服务实例"""
-    from bounded_contexts.user_management.infrastructure.repositories.sqlalchemy_user_repository import \
-        SQLAlchemyUserRepository
-    from bounded_contexts.user_management.infrastructure.auth.password_service import PasswordService
-    from bounded_contexts.user_management.infrastructure.auth.jwt_service import JWTService
-    from bounded_contexts.user_management.application.services.user_application_service import UserApplicationService
-    from shared_kernel.infrastructure.database.async_session import DatabaseConfig
+@pytest.fixture(scope="session")
+async def init_test_database(settings):
+    """集成测试会话前初始化数据库（建库建表）"""
+    from bounded_contexts.user_management.infrastructure.models.user_models import Base
 
-    # 使用测试数据库URL，如果设置了test_database_url则使用它，否则使用默认的database_url
-    database_url = settings.test_database_url if settings.test_database_url else settings.database_url
-
-    # 创建数据库配置
-    db_config = DatabaseConfig(database_url=database_url)
-
-    # 创建服务实例
-    password_service = PasswordService(rounds=settings.bcrypt_rounds)
-    jwt_service = JWTService(
-        secret_key=settings.jwt_secret_key,
-        algorithm=settings.jwt_algorithm,
-        access_token_expire_minutes=settings.jwt_access_token_expire_minutes,
-        refresh_token_expire_days=settings.jwt_refresh_token_expire_days
-    )
-
-    # 创建应用服务工厂 - 模仿正确的依赖注入模式
-    async def create_user_service():
-        # 使用与dependencies.py相同的会话管理模式
-        async for session in db_config.get_session():
-            user_repository = SQLAlchemyUserRepository(session)
-            yield UserApplicationService(
-                user_repository=user_repository,
-                password_service=password_service,
-                jwt_service=jwt_service
-            )
-
-    # 返回服务工厂和数据库配置，以便在应用关闭时清理
-    return create_user_service, db_config
-
-
-# 移除了 clean_test_session fixture，因为：
-# 1. 直接删除数据库数据破坏了测试隔离性
-# 2. 在有外键约束时可能导致删除失败
-# 3. 现有的 test_session 已通过事务回滚提供了完美的测试隔离
-# 4. 符合测试最佳实践：依赖事务回滚而非手动清理数据
-
-
-def create_test_app(settings: Settings):
-    """创建测试应用实例"""
-    # 创建服务工厂和数据库配置
-    create_user_service, db_config = create_test_services(settings)
-
-    @asynccontextmanager
-    async def test_lifespan(app: FastAPI):
-        # 启动时
-        yield
-
-        # 关闭时 - 确保数据库连接池被正确关闭
-        await db_config.close()
-
-    # 创建测试应用
-    app = FastAPI(
-        title="Test App",
-        version="1.0.0",
-        lifespan=test_lifespan
-    )
-
-    # 注册全局异常处理器
-    register_exception_handlers(app)
-
-    # 导入路由
-    from bounded_contexts.user_management.presentation.api.user_routes import router as user_router
-    from bounded_contexts.user_management.presentation.api.auth_routes import router as auth_router
-    from bounded_contexts.user_management.presentation.api.admin_routes import router as admin_router
-
-    # 使用 dependency_overrides 绕过容器依赖注入
-    from bounded_contexts.user_management.presentation.dependencies import get_user_service
-
-    # 覆盖依赖函数
-    # 注意：create_user_service是一个async函数，需要直接作为依赖工厂使用
-    app.dependency_overrides[get_user_service] = create_user_service
-
-    # 注册路由
-    app.include_router(auth_router, prefix=f"{settings.api_v1_prefix}/auth", tags=["Authentication"])
-    app.include_router(user_router, prefix=f"{settings.api_v1_prefix}/users", tags=["User Management"])
-    app.include_router(admin_router, prefix=f"{settings.api_v1_prefix}/admin", tags=["Admin"])
-
-    return app
+    engine = create_async_engine(settings.test_database_url or settings.database_url)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+    await engine.dispose()
 
 
 @pytest.fixture(scope="function")
-async def api_client(base_settings, base_test_session):
-    """API测试客户端 - 使用事务回滚隔离的数据库会话"""
-    app = create_test_app(base_settings)
+async def test_engine(settings, init_test_database):
+    """集成测试专用数据库引擎"""
+    engine = create_async_engine(
+        settings.test_database_url or settings.database_url,
+        echo=False,  # 集成测试时不输出SQL日志
+        pool_size=20,
+        max_overflow=0,
+        pool_pre_ping=True,
+        pool_recycle=300
+    )
+    yield engine
+    await engine.dispose()
 
-    async with AsyncClient(app=app, base_url="http://test") as client:
-        yield client
+
+@pytest.fixture(scope="function")
+async def test_session(test_engine):
+    """集成测试专用数据库会话 - 使用连接级别的事务"""
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    connection = await test_engine.connect()
+    transaction = await connection.begin()
+    async_session = async_sessionmaker(
+        bind=connection,
+        class_=AsyncSession,
+        expire_on_commit=False,
+    )
+    try:
+        async with async_session() as session:
+            yield session
+        await transaction.rollback()
+    finally:
+        await connection.close()
+
+
+@pytest.fixture
+def integration_base_settings(settings):
+    """集成测试基础设置"""
+    return settings
+
+
+@pytest.fixture
+def integration_base_test_session(test_session):
+    """集成测试基础会话别名"""
+    return test_session
+
+
+@pytest.fixture
+def base_settings(settings):
+    """基础设置fixture别名，用于集成测试API测试"""
+    return settings

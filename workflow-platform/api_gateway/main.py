@@ -15,9 +15,7 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 
 from config.settings import Settings
 from container import Container, init_container
-from bounded_contexts.user_management.presentation.api.user_routes import router as user_router
-from bounded_contexts.user_management.presentation.api.auth_routes import router as auth_router
-from bounded_contexts.user_management.presentation.api.admin_routes import router as admin_router
+from api_gateway.routers.main_router import create_api_router
 from shared_kernel.application.exception_handlers import register_exception_handlers
 from shared_kernel.infrastructure.database.async_session import db_config
 
@@ -38,6 +36,8 @@ async def lifespan(app: FastAPI):
         "bounded_contexts.user_management.presentation.api.admin_routes",
         "bounded_contexts.user_management.presentation.dependencies",
         "api_gateway.middleware.auth_middleware",
+        "api_gateway.routers.main_router",
+        "api_gateway.routers.user_management_routes",
         __name__
     ])
     
@@ -74,9 +74,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
     
     # 注册路由
-    app.include_router(auth_router, prefix=f"{settings.api_v1_prefix}/auth", tags=["Authentication"])
-    app.include_router(user_router, prefix=f"{settings.api_v1_prefix}/users", tags=["User Management"])
-    app.include_router(admin_router, prefix=f"{settings.api_v1_prefix}/admin", tags=["Admin"])
+    app.include_router(create_api_router(settings.api_v1_prefix))
     
     # 健康检查端点
     @app.get("/health")

@@ -50,7 +50,7 @@ class EventStore(ABC):
         pass
     
     @abstractmethod
-    async def get_events(self, aggregate_id: UUID, from_version: int = 0) -> List[DomainEvent]:
+    async def get_events(self, aggregate_id: UUID, from_version: int = 0, limit: int = 100) -> List[DomainEvent]:
         """获取聚合根的所有事件"""
         pass
     

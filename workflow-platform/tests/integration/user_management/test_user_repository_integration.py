@@ -50,8 +50,8 @@ class TestSQLAlchemyUserRepository:
 
         # 创建并保存用户
         user = User(
-            username=Username(value="testuser"),
-            email=Email(value="test@example.com"),
+            username=Username(value="existinguser"),
+            email=Email(value="existing@example.com"),
             hashed_password=HashedPassword(value="hashed_password_123")
         )
         await repository.save(user)
@@ -76,8 +76,8 @@ class TestSQLAlchemyUserRepository:
 
         # 创建并保存用户
         user = User(
-            username=Username(value="testuser"),
-            email=Email(value="test@example.com"),
+            username=Username(value="getbyiduser"),
+            email=Email(value="getbyid@example.com"),
             hashed_password=HashedPassword(value="hashed_password_123")
         )
         await repository.save(user)
@@ -88,8 +88,8 @@ class TestSQLAlchemyUserRepository:
 
         assert found_user is not None
         assert found_user.id == user.id
-        assert found_user.username.value == "testuser"
-        assert found_user.email.value == "test@example.com"
+        assert found_user.username.value == "getbyiduser"
+        assert found_user.email.value == "getbyid@example.com"
 
     async def test_get_by_id_not_found(self, test_session):
         """测试获取不存在的用户"""

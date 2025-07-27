@@ -20,7 +20,7 @@ from shared_kernel.infrastructure.database.async_session import Base
 # Import all models to ensure they are registered with Base
 from bounded_contexts.user_management.infrastructure.models.user_models import (
     UserModel, UserProfileModel, UserSessionModel, 
-    UserLoginHistoryModel, PasswordResetTokenModel
+    UserLoginHistoryModel, PasswordResetTokenModel, EmailVerificationTokenModel
 )
 
 target_metadata = Base.metadata

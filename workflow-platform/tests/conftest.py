@@ -1,67 +1,30 @@
 """Pytest配置和fixtures"""
+import sys
 
-from typing import AsyncGenerator
+# macOS 下用 pytest-asyncio 或 asyncio 运行异步测试时，事件循环策略与信号处理不兼容，此处修复
+if sys.platform == "darwin":
+    import asyncio
+
+    try:
+        import uvloop
+
+        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+    except ImportError:
+        asyncio.set_event_loop_policy(asyncio.DefaultEventLoopPolicy())
+
 from unittest.mock import AsyncMock
 
 import pytest
 from dotenv import load_dotenv
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 
 # 在测试开始前加载环境变量
 load_dotenv()
 
 from container import Container
 from bounded_contexts.user_management.domain.entities.user import User
-from bounded_contexts.user_management.infrastructure.models.user_models import (
-    Base
-)
 from bounded_contexts.user_management.infrastructure.auth.password_service import PasswordService
 from bounded_contexts.user_management.infrastructure.auth.jwt_service import JWTService
 from config.settings import Settings
-
-
-@pytest.fixture(scope="session")
-async def init_test_database(settings):
-    """测试会话前初始化数据库（建库建表）"""
-    engine = create_async_engine(settings.test_database_url or settings.database_url)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
-    yield
-    await engine.dispose()
-
-
-@pytest.fixture(scope="function")
-async def test_engine(settings, init_test_database):
-    """全局测试数据库引擎"""
-    engine = create_async_engine(
-        settings.test_database_url or settings.database_url,
-        echo=False,
-        pool_size=20,
-        max_overflow=0,
-        pool_pre_ping=True,
-        pool_recycle=300
-    )
-    yield engine
-    await engine.dispose()
-
-
-@pytest.fixture(scope="function")
-async def test_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
-    """创建测试数据库会话 - 使用连接级别的事务"""
-    connection = await test_engine.connect()
-    transaction = await connection.begin()
-    async_session = async_sessionmaker(
-        bind=connection,
-        class_=AsyncSession,
-        expire_on_commit=False,
-    )
-    try:
-        async with async_session() as session:
-            yield session
-        await transaction.rollback()
-    finally:
-        await connection.close()
 
 
 @pytest.fixture(scope="session")
@@ -131,3 +94,115 @@ def mock_unit_of_work(mock_user_repository):
     uow.__aenter__ = AsyncMock(return_value=uow)
     uow.__aexit__ = AsyncMock(return_value=None)
     return uow
+
+
+# API测试相关的fixtures
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from httpx import AsyncClient
+
+
+def create_test_services(settings: Settings):
+    """创建测试服务实例"""
+    from bounded_contexts.user_management.infrastructure.repositories.sqlalchemy_user_repository import \
+        SQLAlchemyUserRepository
+    from bounded_contexts.user_management.infrastructure.auth.password_service import PasswordService
+    from bounded_contexts.user_management.infrastructure.auth.jwt_service import JWTService
+    from bounded_contexts.user_management.application.services.user_application_service import UserApplicationService
+    from shared_kernel.infrastructure.database.async_session import DatabaseConfig
+
+    # 使用测试数据库URL，如果设置了test_database_url则使用它，否则使用默认的database_url
+    database_url = settings.test_database_url if settings.test_database_url else settings.database_url
+
+    # 创建数据库配置
+    db_config = DatabaseConfig(database_url=database_url)
+
+    # 创建服务实例
+    password_service = PasswordService(rounds=settings.bcrypt_rounds)
+    jwt_service = JWTService(
+        secret_key=settings.jwt_secret_key,
+        algorithm=settings.jwt_algorithm,
+        access_token_expire_minutes=settings.jwt_access_token_expire_minutes,
+        refresh_token_expire_days=settings.jwt_refresh_token_expire_days
+    )
+
+    # 创建应用服务工厂 - 模仿正确的依赖注入模式
+    async def create_user_service():
+        # 使用与dependencies.py相同的会话管理模式
+        async for session in db_config.get_session():
+            user_repository = SQLAlchemyUserRepository(session)
+            yield UserApplicationService(
+                user_repository=user_repository,
+                password_service=password_service,
+                jwt_service=jwt_service
+            )
+
+    # 返回服务工厂和数据库配置，以便在应用关闭时清理
+    return create_user_service, db_config
+
+
+def create_test_app(settings: Settings):
+    """创建测试应用实例"""
+    # 创建服务工厂和数据库配置
+    create_user_service, db_config = create_test_services(settings)
+
+    @asynccontextmanager
+    async def test_lifespan(app: FastAPI):
+        # 启动时
+        yield
+
+        # 关闭时 - 确保数据库连接池被正确关闭
+        await db_config.close()
+
+    # 创建测试应用
+    app = FastAPI(
+        title="Test App",
+        version="1.0.0",
+        lifespan=test_lifespan
+    )
+
+    # 注册全局异常处理器
+    from shared_kernel.application.exception_handlers import register_exception_handlers
+    register_exception_handlers(app)
+
+    # 导入路由
+    from bounded_contexts.user_management.presentation.api.user_routes import router as user_router
+    from bounded_contexts.user_management.presentation.api.auth_routes import router as auth_router
+    from bounded_contexts.user_management.presentation.api.admin_routes import router as admin_router
+
+    # 使用 dependency_overrides 绕过容器依赖注入
+    from bounded_contexts.user_management.presentation.dependencies import get_user_service
+
+    # 覆盖依赖函数
+    # 注意：create_user_service是一个async函数，需要直接作为依赖工厂使用
+    app.dependency_overrides[get_user_service] = create_user_service
+
+    # 注册路由
+    app.include_router(auth_router, prefix=f"{settings.api_v1_prefix}/auth", tags=["Authentication"])
+    app.include_router(user_router, prefix=f"{settings.api_v1_prefix}/users", tags=["User Management"])
+    app.include_router(admin_router, prefix=f"{settings.api_v1_prefix}/admin", tags=["Admin"])
+
+    return app
+
+
+@pytest.fixture(scope="function")
+async def api_client(settings, test_session):
+    """API测试客户端 - 使用事务回滚隔离的数据库会话"""
+    app = create_test_app(settings)
+
+    async with AsyncClient(app=app, base_url="http://test") as client:
+        yield client
+
+
+@pytest.fixture
+def authenticated_headers():
+    """认证用户的请求头"""
+    # TODO: 实现JWT token生成逻辑
+    return {"Authorization": "Bearer test-token"}
+
+
+@pytest.fixture
+def admin_headers():
+    """管理员用户的请求头"""
+    # TODO: 实现管理员JWT token生成逻辑
+    return {"Authorization": "Bearer admin-token"}

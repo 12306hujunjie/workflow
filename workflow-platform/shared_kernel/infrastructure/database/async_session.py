@@ -49,6 +49,10 @@ class DatabaseConfig:
             finally:
                 await session.close()
     
+    def session_scope(self):
+        """返回一个可以用作上下文管理器的会话"""
+        return self.async_session_factory()
+    
     async def close(self):
         """关闭数据库连接"""
         await self.engine.dispose()
