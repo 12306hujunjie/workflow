@@ -20,7 +20,7 @@ jobs:
         image: postgres:15
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
+          POSTGRES_PASSWORD: password
           POSTGRES_DB: workflow_platform_test
         options: >-
           --health-cmd pg_isready
@@ -70,7 +70,7 @@ jobs:
       run: |
         cp .env.example .env
         # 配置集成测试环境
-        echo "TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/workflow_platform_test" >> .env
+        echo "TEST_DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/workflow_platform_test" >> .env
         echo "REDIS_URL=redis://localhost:6379/0" >> .env
     
     - name: Run integration tests
