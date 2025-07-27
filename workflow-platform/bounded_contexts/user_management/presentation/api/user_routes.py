@@ -47,7 +47,7 @@ async def get_current_user(
         last_login_at=user.last_login_at,
         created_at=user.created_at,
         updated_at=user.updated_at,
-        profile=UserProfileResponse.from_orm(user.profile) if user.profile else None
+        profile=UserProfileResponse.model_validate(user.profile) if user.profile else None
     )
     
     return ApiResponse.success_response(
@@ -75,7 +75,7 @@ async def update_profile(
         last_login_at=user.last_login_at,
         created_at=user.created_at,
         updated_at=user.updated_at,
-        profile=UserProfileResponse.from_orm(user.profile) if user.profile else None
+        profile=UserProfileResponse.model_validate(user.profile) if user.profile else None
     )
     
     return ApiResponse.success_response(

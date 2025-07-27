@@ -2,7 +2,27 @@
 
 from datetime import datetime
 from typing import Optional, Dict, Any
-from pydantic import BaseModel, Field, EmailStr
+
+from pydantic import BaseModel, Field, EmailStr, field_validator
+
+
+def validate_password_strength(v: str) -> str:
+    """验证密码强度"""
+    if len(v) < 8:
+        raise ValueError("密码长度至少需要8个字符")
+    has_upper = any(c.isupper() for c in v)
+    has_lower = any(c.islower() for c in v)
+    has_digit = any(c.isdigit() for c in v)
+    has_special = any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in v)
+    if not has_upper:
+        raise ValueError("密码需要包含至少一个大写字母")
+    if not has_lower:
+        raise ValueError("密码需要包含至少一个小写字母")
+    if not has_digit:
+        raise ValueError("密码需要包含至少一个数字")
+    if not has_special:
+        raise ValueError("密码需要包含至少一个特殊字符")
+    return v
 
 
 class UserRegisterRequest(BaseModel):
@@ -33,6 +53,11 @@ class ChangePasswordRequest(BaseModel):
     old_password: str = Field(..., min_length=1, description="原密码")
     new_password: str = Field(..., min_length=8, description="新密码")
 
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, v):
+        return validate_password_strength(v)
+
 
 class ForgotPasswordRequest(BaseModel):
     """忘记密码请求"""
@@ -43,6 +68,11 @@ class ResetPasswordRequest(BaseModel):
     """重置密码请求"""
     token: str = Field(..., description="重置令牌")
     new_password: str = Field(..., min_length=8, description="新密码")
+
+    @field_validator("new_password")
+    @classmethod
+    def validate_new_password(cls, v):
+        return validate_password_strength(v)
 
 
 class RefreshTokenRequest(BaseModel):
@@ -66,6 +96,11 @@ class RegisterUserRequest(BaseModel):
     email: EmailStr = Field(..., description="邮箱地址")
     password: str = Field(..., min_length=8, description="密码")
 
+    @field_validator("password")
+    @classmethod
+    def validate_password(cls, v):
+        return validate_password_strength(v)
+
 
 class UserProfileResponse(BaseModel):
     """用户资料响应"""
@@ -75,9 +110,9 @@ class UserProfileResponse(BaseModel):
     timezone: str = "UTC"
     language: str = "zh-CN"
     notification_preferences: Dict[str, Any] = Field(default_factory=dict)
-    
+
     class Config:
-        from_attributes = True
+        orm_mode = True
 
 
 class UserResponse(BaseModel):
@@ -91,9 +126,9 @@ class UserResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     profile: Optional[UserProfileResponse] = None
-    
+
     class Config:
-        from_attributes = True
+        orm_mode = True
         json_encoders = {
             datetime: lambda v: v.isoformat() if v else None
         }

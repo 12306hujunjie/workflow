@@ -36,17 +36,14 @@ class UserApplicationService:
     async def register_user(self, command: RegisterUserCommand) -> User:
         """注册新用户"""
         # 验证用户名是否已存在
-        if await self._user_repository.exists_by_username(command.username):
+        user_repository: UserRepository = self._user_repository
+
+        if user_repository and await self._user_repository.exists_by_username(command.username):
             raise UserAlreadyExistsException("username", command.username)
         
         # 验证邮箱是否已存在
-        if await self._user_repository.exists_by_email(command.email):
+        if user_repository and await self._user_repository.exists_by_email(command.email):
             raise UserAlreadyExistsException("email", command.email)
-        
-        # 验证密码强度
-        is_valid, message = self._password_service.validate_password_strength(command.password)
-        if not is_valid:
-            raise ValidationException(message)
         
         # 加密密码
         hashed_password = self._password_service.hash_password(command.password)
@@ -162,11 +159,6 @@ class UserApplicationService:
         # 验证旧密码
         if not self._password_service.verify_password(command.old_password, user.hashed_password.value):
             raise InvalidCredentialsException("原密码错误")
-        
-        # 验证新密码强度
-        is_valid, message = self._password_service.validate_password_strength(command.new_password)
-        if not is_valid:
-            raise ValidationException(message)
         
         # 加密新密码
         hashed_password = self._password_service.hash_password(command.new_password)

@@ -68,7 +68,7 @@ async def get_users_list(
             last_login_at=user.last_login_at,
             created_at=user.created_at,
             updated_at=user.updated_at,
-            profile=UserProfileResponse.from_orm(user.profile) if user.profile else None
+            profile=UserProfileResponse.model_validate(user.profile) if user.profile else None
         ).model_dump())
     
     paginated_data = PaginatedResponse.create(
@@ -104,7 +104,7 @@ async def get_user_detail(
         last_login_at=user.last_login_at,
         created_at=user.created_at,
         updated_at=user.updated_at,
-        profile=UserProfileResponse.from_orm(user.profile) if user.profile else None
+        profile=UserProfileResponse.model_validate(user.profile) if user.profile else None
     )
     
     return ApiResponse.success_response(

@@ -1,54 +1,49 @@
 """Pytest配置和fixtures"""
 
-import pytest
 from typing import AsyncGenerator
 from unittest.mock import AsyncMock
+
+import pytest
+from dotenv import load_dotenv
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
+
+# 在测试开始前加载环境变量
+load_dotenv()
 
 from container import Container
 from bounded_contexts.user_management.domain.entities.user import User
 from bounded_contexts.user_management.infrastructure.models.user_models import (
-    Base, UserModel, UserProfileModel, UserSessionModel, 
-    UserLoginHistoryModel, PasswordResetTokenModel, EmailVerificationTokenModel
+    Base
 )
 from bounded_contexts.user_management.infrastructure.auth.password_service import PasswordService
 from bounded_contexts.user_management.infrastructure.auth.jwt_service import JWTService
 from config.settings import Settings
 
 
+@pytest.fixture(scope="session")
+async def init_test_database(settings):
+    """测试会话前初始化数据库（建库建表）"""
+    engine = create_async_engine(settings.test_database_url or settings.database_url)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+    await engine.dispose()
+
+
 @pytest.fixture(scope="function")
-async def test_engine():
-    """测试数据库引擎 - 使用PostgreSQL"""
-    import os
-    
-    database_url = os.getenv(
-        "TEST_DATABASE_URL", 
-        "postgresql+asyncpg://postgres:password@localhost:5432/workflow_platform_test"
-    )
-    
+async def test_engine(settings, init_test_database):
+    """全局测试数据库引擎"""
     engine = create_async_engine(
-        database_url,
+        settings.test_database_url or settings.database_url,
         echo=False,
-        pool_size=1,
+        pool_size=20,
         max_overflow=0,
         pool_pre_ping=True,
         pool_recycle=300
     )
-    
-    # 创建所有表（只在session开始时创建一次）
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    
     yield engine
-    
-    # 清理 - 确保在事件循环关闭前完成
-    try:
-        async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-    except Exception:
-        pass  # 忽略清理时的错误
-    finally:
-        await engine.dispose()
+    await engine.dispose()
 
 
 @pytest.fixture(scope="function")
@@ -56,41 +51,35 @@ async def test_session(test_engine) -> AsyncGenerator[AsyncSession, None]:
     """创建测试数据库会话 - 使用连接级别的事务"""
     connection = await test_engine.connect()
     transaction = await connection.begin()
-    
     async_session = async_sessionmaker(
         bind=connection,
         class_=AsyncSession,
         expire_on_commit=False,
     )
-    
-    session = async_session()
-    
     try:
-        yield session
-    finally:
-        await session.close()
+        async with async_session() as session:
+            yield session
         await transaction.rollback()
+    finally:
         await connection.close()
 
 
+@pytest.fixture(scope="session")
+def settings():
+    """全局Settings配置fixture"""
+    return Settings()
+
+
 @pytest.fixture
-def mock_container():
+def mock_container(settings):
     """创建mock容器"""
     container = Container()
-    
-    # Mock配置
-    container.config.override(Settings(
-        database_url="postgresql+asyncpg://postgres:password@localhost:5432/workflow_platform_test",
-        jwt_secret_key="test-secret-key",
-        jwt_algorithm="HS256",
-        jwt_expire_minutes=30,
-        jwt_refresh_expire_days=7,
-        cors_allowed_origins=["http://localhost:3000"],
-        redis_url="redis://localhost:6379/0"
-    ))
-    
+
+    # Mock配置，使用公共的settings fixture
+    container.config.override(settings)
+
     yield container
-    
+
     container.unwire()
 
 
