@@ -48,7 +48,7 @@ class TestUserAPI:
         assert "refresh_token" in login_data["data"]
 
     async def test_profile_management(self, api_client, base_settings):
-        """测试用户资料管理"""
+        """测试用户资料管理 - 完整的profile CRUD操作"""
 
         # 1. 注册用户
         register_response = await api_client.post(
@@ -66,8 +66,86 @@ class TestUserAPI:
         user_data = response_data["data"]
         user_id = user_data["id"]
 
-        # 2. 获取用户资料（需要认证，这里跳过）
-        # 在实际测试中，需要先登录获取token
+        # 2. 登录获取token
+        login_response = await api_client.post(
+            f"{base_settings.api_v1_prefix}/auth/login",
+            json={
+                "username_or_email": "profiletest",
+                "password": "Profile@123"
+            }
+        )
+
+        assert login_response.status_code == status.HTTP_200_OK
+        login_data = login_response.json()
+        assert login_data["success"] == True
+        access_token = login_data["data"]["access_token"]
+
+        # 3. 获取初始用户资料
+        headers = {"Authorization": f"Bearer {access_token}"}
+        profile_get_response = await api_client.get(
+            f"{base_settings.api_v1_prefix}/users/me",
+            headers=headers
+        )
+
+        assert profile_get_response.status_code == status.HTTP_200_OK
+        profile_data = profile_get_response.json()
+        assert profile_data["success"] == True
+        assert profile_data["data"]["username"] == "profiletest"
+        assert profile_data["data"]["profile"] is None  # 初始profile为空
+
+        # 4. 更新用户资料 - 测试修复后的API
+        profile_update_data = {
+            "display_name": "测试用户",
+            "bio": "这是一个集成测试用户的个人简介",
+            "timezone": "Asia/Shanghai",
+            "language": "zh-CN"
+        }
+
+        profile_update_response = await api_client.put(
+            f"{base_settings.api_v1_prefix}/users/me/profile",
+            json=profile_update_data,
+            headers=headers
+        )
+
+        assert profile_update_response.status_code == status.HTTP_200_OK
+        update_data = profile_update_response.json()
+        assert update_data["success"] == True
+        assert update_data["data"]["profile"]["display_name"] == "测试用户"
+        assert update_data["data"]["profile"]["bio"] == "这是一个集成测试用户的个人简介"
+        assert update_data["data"]["profile"]["timezone"] == "Asia/Shanghai"
+        assert update_data["data"]["profile"]["language"] == "zh-CN"
+
+        # 5. 验证资料已持久化 - 重新获取
+        profile_verify_response = await api_client.get(
+            f"{base_settings.api_v1_prefix}/users/me",
+            headers=headers
+        )
+
+        assert profile_verify_response.status_code == status.HTTP_200_OK
+        verify_data = profile_verify_response.json()
+        assert verify_data["success"] == True
+        assert verify_data["data"]["profile"]["display_name"] == "测试用户"
+        assert verify_data["data"]["profile"]["bio"] == "这是一个集成测试用户的个人简介"
+
+        # 6. 部分更新资料
+        partial_update_data = {
+            "display_name": "更新用户",
+            "timezone": "Asia/Tokyo"
+        }
+
+        partial_update_response = await api_client.put(
+            f"{base_settings.api_v1_prefix}/users/me/profile",
+            json=partial_update_data,
+            headers=headers
+        )
+
+        assert partial_update_response.status_code == status.HTTP_200_OK
+        partial_data = partial_update_response.json()
+        assert partial_data["success"] == True
+        assert partial_data["data"]["profile"]["display_name"] == "更新用户"
+        assert partial_data["data"]["profile"]["timezone"] == "Asia/Tokyo"
+        # bio应该保持不变
+        assert partial_data["data"]["profile"]["bio"] == "这是一个集成测试用户的个人简介"
 
     async def test_concurrent_registration(self, api_client, base_settings):
         """测试并发注册相同用户名"""

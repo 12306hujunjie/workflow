@@ -46,13 +46,29 @@ export const ProfilePage: React.FC = () => {
   // 初始化表单数据
   React.useEffect(() => {
     if (user) {
+      // 如果用户有profile数据，拆分display_name为first_name和last_name
+      let firstName = '';
+      let lastName = '';
+      
+      if (user.profile?.display_name) {
+        // 简单的拆分逻辑：假设最后一个字符是姓氏，其余是名字
+        const displayName = user.profile.display_name.trim();
+        if (displayName.length > 1) {
+          lastName = displayName.slice(-1);
+          firstName = displayName.slice(0, -1);
+        } else {
+          firstName = displayName;
+        }
+      }
+      
       form.setFieldsValue({
         username: user.username,
         email: user.email,
-        first_name: user.first_name || '',
-        last_name: user.last_name || '',
-        timezone: user.timezone || 'Asia/Shanghai',
-        language: user.language || 'zh-CN',
+        first_name: firstName,
+        last_name: lastName,
+        timezone: user.profile?.timezone || '',
+        language: user.profile?.language || '',
+        bio: user.profile?.bio || '',
       });
     }
   }, [user, form]);
@@ -75,7 +91,24 @@ export const ProfilePage: React.FC = () => {
   const handleSubmit = async (values: any) => {
     setIsLoading(true);
     try {
-      await updateProfile(values);
+      // 转换前端表单数据以匹配后端API schema
+      const profileData: any = { ...values };
+      
+      // 如果有first_name和last_name，合并为display_name
+      if (values.first_name || values.last_name) {
+        const firstName = values.first_name || '';
+        const lastName = values.last_name || '';
+        profileData.display_name = `${firstName}${lastName}`.trim();
+        // 移除原始的name字段，因为后端不接受这些字段
+        delete profileData.first_name;
+        delete profileData.last_name;
+      }
+      
+      // 移除username和email字段，因为这些不能通过profile API更新
+      delete profileData.username;
+      delete profileData.email;
+      
+      await updateProfile(profileData);
       message.success('资料更新成功！');
       setIsEditing(false);
     } catch (error: any) {
@@ -93,9 +126,6 @@ export const ProfilePage: React.FC = () => {
 
   // 获取用户显示名称
   const getUserDisplayName = () => {
-    if (user?.first_name && user?.last_name) {
-      return `${user.first_name} ${user.last_name}`;
-    }
     return user?.username || '用户';
   };
 
@@ -152,7 +182,6 @@ export const ProfilePage: React.FC = () => {
               <div className="relative inline-block">
                 <Avatar
                   size={120}
-                  src={user?.avatar}
                   icon={<UserOutlined />}
                 />
                 {isEditing && (
@@ -212,13 +241,13 @@ export const ProfilePage: React.FC = () => {
               <div className="flex justify-between">
                 <Text type="secondary">注册时间:</Text>
                 <Text>
-                  {user?.date_joined ? dayjs(user.date_joined).format('YYYY-MM-DD') : '-'}
+                  {user?.created_at ? dayjs(user.created_at).format('YYYY-MM-DD') : '-'}
                 </Text>
               </div>
               <div className="flex justify-between">
                 <Text type="secondary">最后登录:</Text>
                 <Text>
-                  {user?.last_login ? dayjs(user.last_login).format('YYYY-MM-DD HH:mm') : '从未登录'}
+                  {user?.last_login_at ? dayjs(user.last_login_at).format('YYYY-MM-DD HH:mm') : '从未登录'}
                 </Text>
               </div>
               <div className="flex justify-between">
@@ -308,6 +337,24 @@ export const ProfilePage: React.FC = () => {
                   </Form.Item>
                 </Col>
               </Row>
+
+              <Form.Item
+                name="bio"
+                label="个人简介"
+                rules={[
+                  {
+                    max: 500,
+                    message: '个人简介不能超过500个字符',
+                  },
+                ]}
+              >
+                <TextArea
+                  placeholder="请输入个人简介"
+                  rows={4}
+                  showCount
+                  maxLength={500}
+                />
+              </Form.Item>
 
               <Row gutter={[16, 0]}>
                 <Col xs={24} sm={12}>
