@@ -154,10 +154,6 @@ const LoginPage: React.FC = () => {
                   required: true,
                   message: '请输入密码！',
                 },
-                {
-                  min: 6,
-                  message: '密码至少6个字符！',
-                },
               ]}
             >
               <Input.Password

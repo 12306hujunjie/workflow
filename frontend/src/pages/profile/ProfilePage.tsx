@@ -274,9 +274,20 @@ export const ProfilePage: React.FC = () => {
                     label="名字"
                     rules={[
                       {
-                        max: 30,
-                        message: '名字不能超过30个字符',
+                        max: 50,
+                        message: '名字不能超过50个字符',
                       },
+                      ({ getFieldValue }) => ({
+                        validator: (_, value) => {
+                          const firstName = value || '';
+                          const lastName = getFieldValue('last_name') || '';
+                          const displayName = `${firstName}${lastName}`.trim();
+                          if (displayName.length > 100) {
+                            return Promise.reject(new Error('姓名总长度不能超过100个字符'));
+                          }
+                          return Promise.resolve();
+                        },
+                      }),
                     ]}
                   >
                     <Input placeholder="请输入名字" />
@@ -288,9 +299,20 @@ export const ProfilePage: React.FC = () => {
                     label="姓氏"
                     rules={[
                       {
-                        max: 30,
-                        message: '姓氏不能超过30个字符',
+                        max: 50,
+                        message: '姓氏不能超过50个字符',
                       },
+                      ({ getFieldValue }) => ({
+                        validator: (_, value) => {
+                          const lastName = value || '';
+                          const firstName = getFieldValue('first_name') || '';
+                          const displayName = `${firstName}${lastName}`.trim();
+                          if (displayName.length > 100) {
+                            return Promise.reject(new Error('姓名总长度不能超过100个字符'));
+                          }
+                          return Promise.resolve();
+                        },
+                      }),
                     ]}
                   >
                     <Input placeholder="请输入姓氏" />
@@ -310,8 +332,8 @@ export const ProfilePage: React.FC = () => {
                       },
                       {
                         min: 3,
-                        max: 20,
-                        message: '用户名长度应在3-20个字符之间',
+                        max: 50,
+                        message: '用户名长度应在3-50个字符之间',
                       },
                     ]}
                   >

@@ -9,6 +9,9 @@ import {
   Space,
   Alert,
   Progress,
+  message,
+  Row,
+  Col,
 } from 'antd';
 import {
   UserOutlined,
@@ -17,29 +20,51 @@ import {
   EyeInvisibleOutlined,
   EyeTwoTone,
   RocketOutlined,
+  LoadingOutlined,
 } from '@ant-design/icons';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
+import { authService } from '../../services/authService';
 import type { RegisterFormData } from '../../types/auth';
 
 const { Title, Text } = Typography;
 
 /**
- * 密码强度检查
+ * 密码强度检查（与后端验证规则一致）
  */
 const checkPasswordStrength = (password: string): { score: number; text: string; color: string } => {
   let score = 0;
   
-  if (password.length >= 8) score += 25;
-  if (/[a-z]/.test(password)) score += 25;
-  if (/[A-Z]/.test(password)) score += 25;
-  if (/[0-9]/.test(password)) score += 25;
-  if (/[^A-Za-z0-9]/.test(password)) score += 25;
+  if (password.length >= 8) score += 20;
+  if (/[a-z]/.test(password)) score += 20;
+  if (/[A-Z]/.test(password)) score += 20;
+  if (/[0-9]/.test(password)) score += 20;
+  if (/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) score += 20;
   
-  if (score <= 25) return { score, text: '弱', color: '#ff4d4f' };
-  if (score <= 50) return { score, text: '一般', color: '#faad14' };
-  if (score <= 75) return { score, text: '良好', color: '#1890ff' };
-  return { score, text: '强', color: '#52c41a' };
+  if (score < 100) return { score, text: '不符合要求', color: '#ff4d4f' };
+  return { score, text: '符合要求', color: '#52c41a' };
+};
+
+/**
+ * 验证密码是否符合后端要求
+ */
+const validatePasswordStrength = (password: string): string | null => {
+  if (password.length < 8) {
+    return '密码长度至少需要8个字符';
+  }
+  if (!/[A-Z]/.test(password)) {
+    return '密码需要包含至少一个大写字母';
+  }
+  if (!/[a-z]/.test(password)) {
+    return '密码需要包含至少一个小写字母';
+  }
+  if (!/[0-9]/.test(password)) {
+    return '密码需要包含至少一个数字';
+  }
+  if (!/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) {
+    return '密码需要包含至少一个特殊字符';
+  }
+  return null;
 };
 
 /**
@@ -48,24 +73,101 @@ const checkPasswordStrength = (password: string): { score: number; text: string;
 const RegisterPage: React.FC = () => {
   const [form] = Form.useForm();
   const [passwordStrength, setPasswordStrength] = useState({ score: 0, text: '', color: '' });
+  const [codeSent, setCodeSent] = useState(false);
+  const [sendingCode, setSendingCode] = useState(false);
+  const [countdown, setCountdown] = useState(0);
   const { register, isLoading, error } = useAuth();
   const navigate = useNavigate();
 
-  // 处理密码变化
-  const handlePasswordChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const password = e.target.value;
-    setPasswordStrength(checkPasswordStrength(password));
+
+  // 发送验证码
+  const handleSendCode = async () => {
+    try {
+      const email = form.getFieldValue('email');
+      if (!email) {
+        message.error('请先输入邮箱地址');
+        return;
+      }
+      
+      // 验证邮箱格式
+      await form.validateFields(['email']);
+      
+      setSendingCode(true);
+      await authService.sendVerificationCode(email, 'register');
+      
+      setCodeSent(true);
+      message.success('验证码已发送，请查收邮件');
+      
+      // 开始倒计时（3分钟 = 180秒）
+      setCountdown(180);
+      const timer = setInterval(() => {
+        setCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+      
+    } catch (error: any) {
+      console.error('Send code failed:', error);
+      if (error.status === 429) {
+        message.error(error.message);
+      } else if (error.message) {
+        message.error(error.message);
+      } else {
+        message.error('发送验证码失败，请稍后重试');
+      }
+    } finally {
+      setSendingCode(false);
+    }
   };
 
   // 处理表单提交
-  const handleSubmit = async (values: RegisterFormData) => {
+  const handleSubmit = async (values: { username: string; email: string; password: string; confirmPassword: string; code: string }) => {
+    // 检查是否已发送验证码
+    if (!codeSent) {
+      message.warning('请先获取邮箱验证码');
+      return;
+    }
+
+    // 检查验证码是否为空
+    if (!values.code || values.code.trim() === '') {
+      message.warning('请输入验证码');
+      return;
+    }
+
     try {
-      await register(values.username, values.email, values.password);
-      // 注册成功后重定向到仪表板
-      navigate('/dashboard');
-    } catch (error) {
-      // 错误处理已在useAuth hook中完成
+      await register(values.username, values.email, values.password, values.code);
+      message.success('注册成功！正在跳转到登录页面...');
+      // 延迟跳转，让用户看到成功提示
+      setTimeout(() => {
+        navigate('/auth/login', {
+          state: {
+            message: '注册成功！请使用您的账号登录'
+          }
+        });
+      }, 1500);
+    } catch (error: any) {
       console.error('Registration failed:', error);
+      
+      // 根据不同的错误类型显示不同的提示
+      if (error.message) {
+        if (error.message.includes('验证码')) {
+          message.error('验证码错误或已过期，请重新获取验证码');
+        } else if (error.message.includes('用户名')) {
+          message.error('用户名已存在，请选择其他用户名');
+        } else if (error.message.includes('邮箱')) {
+          message.error('邮箱已被注册，请使用其他邮箱');
+        } else if (error.message.includes('密码')) {
+          message.error('密码格式不符合要求');
+        } else {
+          message.error(error.message);
+        }
+      } else {
+        message.error('注册失败，请检查网络连接后重试');
+      }
     }
   };
 
@@ -133,10 +235,18 @@ const RegisterPage: React.FC = () => {
             layout="vertical"
             size="large"
             autoComplete="off"
+            onValuesChange={(changedValues, allValues) => {
+              if (changedValues.password) {
+                setPasswordStrength(checkPasswordStrength(changedValues.password));
+                // 当密码字段变化时，重新验证确认密码字段
+                form.validateFields(['confirmPassword']);
+              }
+            }}
           >
             <Form.Item
               name="username"
               label="用户名"
+              htmlFor="register-username"
               rules={[
                 {
                   required: true,
@@ -144,8 +254,8 @@ const RegisterPage: React.FC = () => {
                 },
                 {
                   min: 3,
-                  max: 20,
-                  message: '用户名长度应在3-20个字符之间！',
+                  max: 50,
+                  message: '用户名长度应在3-50个字符之间！',
                 },
                 {
                   pattern: /^[a-zA-Z0-9_]+$/,
@@ -154,6 +264,7 @@ const RegisterPage: React.FC = () => {
               ]}
             >
               <Input
+                id="register-username"
                 prefix={<UserOutlined />}
                 placeholder="请输入用户名"
                 autoComplete="username"
@@ -163,6 +274,7 @@ const RegisterPage: React.FC = () => {
             <Form.Item
               name="email"
               label="邮箱地址"
+              htmlFor="register-email"
               rules={[
                 {
                   required: true,
@@ -175,6 +287,7 @@ const RegisterPage: React.FC = () => {
               ]}
             >
               <Input
+                id="register-email"
                 prefix={<MailOutlined />}
                 placeholder="请输入邮箱地址"
                 autoComplete="email"
@@ -184,52 +297,59 @@ const RegisterPage: React.FC = () => {
             <Form.Item
               name="password"
               label="密码"
+              htmlFor="register-password"
               rules={[
                 {
                   required: true,
                   message: '请输入密码！',
                 },
                 {
-                  min: 8,
-                  message: '密码至少8个字符！',
+                  validator: (_, value) => {
+                    if (!value) return Promise.resolve();
+                    const error = validatePasswordStrength(value);
+                    return error ? Promise.reject(new Error(error)) : Promise.resolve();
+                  },
                 },
               ]}
             >
-              <Input.Password
-                prefix={<LockOutlined />}
-                placeholder="请输入密码"
-                autoComplete="new-password"
-                onChange={handlePasswordChange}
-                iconRender={(visible) =>
-                  visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />
-                }
-              />
-              {passwordStrength.score > 0 && (
-                <div className="mt-2">
-                  <div className="flex items-center justify-between mb-1">
-                    <Text type="secondary" className="text-xs">
-                      密码强度
-                    </Text>
-                    <Text
-                      className="text-xs"
-                      style={{ color: passwordStrength.color }}
-                    >
-                      {passwordStrength.text}
-                    </Text>
+              <div>
+                <Input.Password
+                  id="register-password"
+                  prefix={<LockOutlined />}
+                  placeholder="请输入密码"
+                  autoComplete="new-password"
+                  iconRender={(visible) =>
+                    visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />
+                  }
+                />
+                {passwordStrength.score > 0 && (
+                  <div className="mt-2">
+                    <div className="flex items-center justify-between mb-1">
+                      <Text type="secondary" className="text-xs">
+                        密码强度
+                      </Text>
+                      <Text
+                        className="text-xs"
+                        style={{ color: passwordStrength.color }}
+                      >
+                        {passwordStrength.text}
+                      </Text>
+                    </div>
+                    <Progress
+                      percent={passwordStrength.score}
+                      strokeColor={passwordStrength.color}
+                      showInfo={false}
+                      size="small"
+                    />
                   </div>
-                  <Progress
-                    percent={passwordStrength.score}
-                    strokeColor={passwordStrength.color}
-                    showInfo={false}
-                    size="small"
-                  />
-                </div>
-              )}
+                )}
+              </div>
             </Form.Item>
 
             <Form.Item
               name="confirmPassword"
               label="确认密码"
+              htmlFor="register-confirm-password"
               dependencies={['password']}
               rules={[
                 {
@@ -238,7 +358,12 @@ const RegisterPage: React.FC = () => {
                 },
                 ({ getFieldValue }) => ({
                   validator(_, value) {
-                    if (!value || getFieldValue('password') === value) {
+                    if (!value) {
+                      return Promise.resolve();
+                    }
+                    const password = getFieldValue('password');
+                    console.log('Password validation:', { password, confirmPassword: value, match: password === value });
+                    if (password === value) {
                       return Promise.resolve();
                     }
                     return Promise.reject(new Error('两次输入的密码不一致！'));
@@ -247,25 +372,93 @@ const RegisterPage: React.FC = () => {
               ]}
             >
               <Input.Password
+                id="register-confirm-password"
                 prefix={<LockOutlined />}
                 placeholder="请再次输入密码"
-                autoComplete="new-password"
+                autoComplete="off"
                 iconRender={(visible) =>
                   visible ? <EyeTwoTone /> : <EyeInvisibleOutlined />
                 }
               />
             </Form.Item>
 
+            <Form.Item
+              name="code"
+              label="邮箱验证码"
+              htmlFor="register-verification-code"
+              rules={[
+                {
+                  required: codeSent,
+                  message: '请输入邮箱验证码！',
+                },
+                {
+                  len: 6,
+                  message: '验证码必须是6位数字！',
+                },
+                {
+                  pattern: /^[0-9]{6}$/,
+                  message: '验证码只能包含数字！',
+                },
+              ]}
+            >
+              <div>
+                <Row gutter={8}>
+                  <Col span={16}>
+                    <Input
+                      id="register-verification-code"
+                      placeholder="请输入6位验证码"
+                      maxLength={6}
+                      disabled={!codeSent}
+                      autoComplete="off"
+                    />
+                  </Col>
+                  <Col span={8}>
+                    <Button
+                      type="default"
+                      onClick={handleSendCode}
+                      loading={sendingCode}
+                      disabled={countdown > 0}
+                      block
+                      icon={sendingCode ? <LoadingOutlined /> : undefined}
+                    >
+                      {countdown > 0
+                        ? `${Math.floor(countdown / 60)}:${(countdown % 60).toString().padStart(2, '0')}`
+                        : codeSent
+                        ? '重新发送'
+                        : '发送验证码'
+                      }
+                    </Button>
+                  </Col>
+                </Row>
+                {codeSent && (
+                  <div className="mt-2">
+                    <Text type="secondary" className="text-xs">
+                      验证码已发送到您的邮箱，请查收并输入
+                    </Text>
+                  </div>
+                )}
+              </div>
+            </Form.Item>
+
             <Form.Item>
-              <Button
-                type="primary"
-                htmlType="submit"
-                loading={isLoading}
-                block
-                className="h-12"
-              >
-                {isLoading ? '注册中...' : '注册'}
-              </Button>
+              <div>
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  loading={isLoading}
+                  block
+                  className="h-12"
+                >
+                  {isLoading ? '注册中...' : '注册'}
+                </Button>
+                {!codeSent && (
+                  <div className="mt-2 text-center">
+                    <Text type="secondary" className="text-xs">
+                      请先获取邮箱验证码
+                    </Text>
+                  </div>
+                )}
+              </div>
             </Form.Item>
           </Form>
 

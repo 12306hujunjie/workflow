@@ -86,9 +86,11 @@ export interface ResetPasswordRequest {
 
 export interface UpdateProfileRequest {
   display_name?: string;
+  avatar_url?: string;
   bio?: string;
   timezone?: string;
   language?: string;
+  notification_preferences?: Record<string, any>;
 }
 
 // API响应类型
