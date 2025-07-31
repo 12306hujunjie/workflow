@@ -54,9 +54,7 @@ class User(AggregateRoot):
             email=Email(value=email),
             hashed_password=HashedPassword(value=hashed_password),
             role=role,
-            # TODO: 暂时跳过邮箱验证，直接设置为ACTIVE状态
-            # status=UserStatus.PENDING_VERIFICATION
-            status=UserStatus.ACTIVE
+            status=UserStatus.PENDING_VERIFICATION
         )
     
     def activate(self) -> None:

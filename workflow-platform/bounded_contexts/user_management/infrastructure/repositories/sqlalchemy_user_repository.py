@@ -1,7 +1,7 @@
 """用户仓储SQLAlchemy实现"""
 
-from typing import Optional, List
-from sqlalchemy import select, func, and_
+from typing import Optional, List, Dict, Any
+from sqlalchemy import select, func, and_, or_, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -9,7 +9,7 @@ from ...domain.entities.user import User
 from ...domain.repositories.user_repository import UserRepository
 from ...domain.value_objects.user_profile import UserProfile
 from shared_kernel.domain.value_objects import Email, Username, HashedPassword, UserStatus, UserRole
-from ..models.user_models import UserModel, UserProfileModel
+from ..models.user_models import UserModel, UserProfileModel, UserLoginHistoryModel, PasswordResetTokenModel, EmailVerificationTokenModel
 
 
 class SQLAlchemyUserRepository(UserRepository):
@@ -255,3 +255,240 @@ class SQLAlchemyUserRepository(UserRepository):
         user.clear_domain_events()
         
         return user
+    
+    async def get_login_history(self, user_id: int, page: int = 1, limit: int = 20) -> Dict[str, Any]:
+        """获取用户登录历史"""
+        try:
+            # 计算总数
+            count_stmt = select(func.count(UserLoginHistoryModel.id)).where(
+                UserLoginHistoryModel.user_id == user_id
+            )
+            total_result = await self._session.execute(count_stmt)
+            total = total_result.scalar() or 0
+            
+            # 分页查询
+            offset = (page - 1) * limit
+            stmt = select(UserLoginHistoryModel).where(
+                UserLoginHistoryModel.user_id == user_id
+            ).order_by(
+                UserLoginHistoryModel.created_at.desc()
+            ).offset(offset).limit(limit)
+            
+            result = await self._session.execute(stmt)
+            records = result.scalars().all()
+            
+            return {
+                "items": records,
+                "total": total
+            }
+            
+        except Exception as e:
+            # 如果表不存在或查询失败，返回空结果
+            return {"items": [], "total": 0}
+    
+    async def save_login_history(self, login_record: Dict[str, Any]) -> None:
+        """保存登录历史记录"""
+        try:
+            db_record = UserLoginHistoryModel(
+                user_id=login_record["user_id"],
+                ip_address=login_record["ip_address"],
+                user_agent=login_record["user_agent"],
+                login_status="success" if login_record["success"] else "failed",
+                location_info={"city": login_record.get("location", "未知位置")},
+                created_at=login_record["login_at"]
+            )
+            
+            self._session.add(db_record)
+            await self._session.flush()
+            
+        except Exception as e:
+            # 登录历史记录失败不应该影响主流程
+            print(f"Failed to save login history: {str(e)}")
+            pass
+    
+    async def find_users_paginated(
+        self, 
+        page: int = 1, 
+        page_size: int = 20,
+        status: Optional[str] = None,
+        role: Optional[str] = None,
+        search: Optional[str] = None
+    ) -> tuple[List[User], int]:
+        """分页查询用户"""
+        
+        # 构建查询条件
+        conditions = []
+        
+        if status:
+            conditions.append(UserModel.status == status)
+        
+        if role:
+            conditions.append(UserModel.role == role)
+        
+        if search:
+            search_term = f"%{search}%"
+            conditions.append(
+                or_(
+                    UserModel.username.ilike(search_term),
+                    UserModel.email.ilike(search_term)
+                )
+            )
+        
+        # 计算总数
+        count_stmt = select(func.count(UserModel.id))
+        if conditions:
+            count_stmt = count_stmt.where(and_(*conditions))
+        
+        total_result = await self._session.execute(count_stmt)
+        total = total_result.scalar() or 0
+        
+        # 分页查询
+        offset = (page - 1) * page_size
+        stmt = select(UserModel).options(
+            selectinload(UserModel.profile)
+        ).order_by(UserModel.created_at.desc())
+        
+        if conditions:
+            stmt = stmt.where(and_(*conditions))
+            
+        stmt = stmt.offset(offset).limit(page_size)
+        
+        result = await self._session.execute(stmt)
+        db_users = result.scalars().all()
+        
+        # 转换为领域对象
+        users = []
+        for db_user in db_users:
+            domain_user = await self._model_to_domain(db_user)
+            users.append(domain_user)
+        
+        return users, total
+    
+    async def save_password_reset_token(self, user_id: int, token: str, expires_at) -> None:
+        """保存密码重置token"""
+        try:
+            # 删除用户现有的未使用的重置token
+            delete_stmt = text("""
+                DELETE FROM password_reset_tokens 
+                WHERE user_id = :user_id AND is_used = false
+            """)
+            await self._session.execute(delete_stmt, {"user_id": user_id})
+            
+            # 创建新的重置token
+            reset_token = PasswordResetTokenModel(
+                user_id=user_id,
+                token=token,
+                expires_at=expires_at,
+                is_used=False
+            )
+            
+            self._session.add(reset_token)
+            await self._session.flush()
+            
+        except Exception as e:
+            print(f"Failed to save password reset token: {str(e)}")
+            raise
+    
+    async def get_password_reset_token(self, token: str) -> Optional[Dict[str, Any]]:
+        """获取密码重置token信息"""
+        try:
+            stmt = select(PasswordResetTokenModel).where(
+                PasswordResetTokenModel.token == token
+            )
+            result = await self._session.execute(stmt)
+            reset_token = result.scalar_one_or_none()
+            
+            if reset_token:
+                return {
+                    "user_id": reset_token.user_id,
+                    "expires_at": reset_token.expires_at,
+                    "used": reset_token.is_used
+                }
+            return None
+            
+        except Exception as e:
+            print(f"Failed to get password reset token: {str(e)}")
+            return None
+    
+    async def mark_password_reset_token_used(self, token: str) -> None:
+        """标记密码重置token为已使用"""
+        try:
+            stmt = text("""
+                UPDATE password_reset_tokens 
+                SET is_used = true 
+                WHERE token = :token
+            """)
+            await self._session.execute(stmt, {"token": token})
+            await self._session.flush()
+            
+        except Exception as e:
+            print(f"Failed to mark password reset token as used: {str(e)}")
+            pass
+    
+    async def save_email_verification_token(self, user_id: int, token: str, expires_at) -> None:
+        """保存邮箱验证token"""
+        try:
+            # 删除用户现有的未使用的验证token
+            delete_stmt = text("""
+                DELETE FROM email_verification_tokens 
+                WHERE user_id = :user_id AND is_verified = false
+            """)
+            await self._session.execute(delete_stmt, {"user_id": user_id})
+            
+            # 获取用户邮箱
+            user = await self.get_by_id(user_id)
+            if not user:
+                raise ValueError(f"User not found: {user_id}")
+            
+            # 创建新的验证token
+            verification_token = EmailVerificationTokenModel(
+                user_id=user_id,
+                token=token,
+                email=user.email.value,
+                expires_at=expires_at,
+                is_verified=False
+            )
+            
+            self._session.add(verification_token)
+            await self._session.flush()
+            
+        except Exception as e:
+            print(f"Failed to save email verification token: {str(e)}")
+            raise
+    
+    async def get_email_verification_token(self, token: str) -> Optional[Dict[str, Any]]:
+        """获取邮箱验证token信息"""
+        try:
+            stmt = select(EmailVerificationTokenModel).where(
+                EmailVerificationTokenModel.token == token
+            )
+            result = await self._session.execute(stmt)
+            verification_token = result.scalar_one_or_none()
+            
+            if verification_token:
+                return {
+                    "user_id": verification_token.user_id,
+                    "email": verification_token.email,
+                    "expires_at": verification_token.expires_at,
+                    "is_verified": verification_token.is_verified
+                }
+            return None
+            
+        except Exception as e:
+            print(f"Failed to get email verification token: {str(e)}")
+            return None
+    
+    async def mark_email_verification_token_used(self, token: str) -> None:
+        """标记邮箱验证token为已使用"""
+        try:
+            stmt = text("""
+                UPDATE email_verification_tokens 
+                SET is_verified = true, verified_at = NOW()
+                WHERE token = :token
+            """)
+            await self._session.execute(stmt, {"token": token})
+            await self._session.flush()
+            
+        except Exception as e:
+            print(f"Failed to mark email verification token as used: {str(e)}")
+            pass

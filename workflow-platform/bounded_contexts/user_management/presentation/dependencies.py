@@ -6,6 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ..application.services.user_application_service import UserApplicationService
 from ..infrastructure.repositories.sqlalchemy_user_repository import SQLAlchemyUserRepository
 from shared_kernel.infrastructure.database.async_session import db_config
+from shared_kernel.infrastructure.email_service import MockEmailService, SMTPEmailService
+from config.email_settings import email_settings
 from container import container
 
 
@@ -34,8 +36,16 @@ async def get_user_service(
     password_service = container.password_service()
     jwt_service = container.jwt_service()
     
+    # 根据配置选择邮件服务实现
+    if email_settings.USE_MOCK_EMAIL:
+        email_service = MockEmailService()
+    else:
+        email_config = email_settings.to_email_config()
+        email_service = SMTPEmailService(email_config)
+    
     return UserApplicationService(
         user_repository=user_repository,
         password_service=password_service,
-        jwt_service=jwt_service
+        jwt_service=jwt_service,
+        email_service=email_service
     )

@@ -14,6 +14,7 @@ from shared_kernel.application.exceptions import (
 )
 from ...infrastructure.auth.password_service import PasswordService
 from ...infrastructure.auth.jwt_service import JWTService
+from shared_kernel.infrastructure.email_service import EmailService
 from ..commands.user_commands import (
     RegisterUserCommand, LoginUserCommand, UpdateUserProfileCommand,
     ChangePasswordCommand, ResetPasswordCommand
@@ -27,11 +28,13 @@ class UserApplicationService:
         self,
         user_repository: UserRepository,
         password_service: PasswordService,
-        jwt_service: JWTService
+        jwt_service: JWTService,
+        email_service: EmailService
     ):
         self._user_repository = user_repository
         self._password_service = password_service
         self._jwt_service = jwt_service
+        self._email_service = email_service
     
     async def register_user(self, command: RegisterUserCommand) -> User:
         """注册新用户"""
@@ -59,6 +62,23 @@ class UserApplicationService:
         # 保存用户
         saved_user = await self._user_repository.save(user)
         
+        # 发送邮箱验证邮件
+        verification_token = secrets.token_urlsafe(32)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=24)  # 24小时过期
+        
+        await self._user_repository.save_email_verification_token(
+            user_id=saved_user.id,
+            token=verification_token,
+            expires_at=expires_at
+        )
+        
+        # 发送验证邮件
+        await self._email_service.send_verification_email(
+            to_email=saved_user.email.value,
+            username=saved_user.username.value,
+            token=verification_token
+        )
+        
         return saved_user
     
     async def login_user(self, command: LoginUserCommand) -> Dict[str, Any]:
@@ -80,9 +100,9 @@ class UserApplicationService:
         
         # 检查用户是否可以登录
         if not user.can_login():
-            # TODO: 暂时注释掉邮箱验证检查
-            # if user.status == UserStatus.PENDING_VERIFICATION:
-            #     raise AuthorizationException("账户待验证，请先验证邮箱")
+            # 邮箱验证检查
+            if user.status == UserStatus.PENDING_VERIFICATION:
+                raise AuthorizationException("账户待验证，请先验证邮箱")
             if user.status == UserStatus.BANNED:
                 raise AuthorizationException("账户已被封禁")
             else:
@@ -238,17 +258,13 @@ class UserApplicationService:
         search: Optional[str] = None
     ) -> tuple[List[User], int]:
         """获取用户列表（分页）"""
-        # TODO: 实现分页查询逻辑
-        # 这里需要在repository中实现相应的方法
-        users = await self._user_repository.find_all()
-        total = len(users)
-        
-        # 简单的内存分页（生产环境应该在数据库层面实现）
-        start = (page - 1) * page_size
-        end = start + page_size
-        paginated_users = users[start:end]
-        
-        return paginated_users, total
+        return await self._user_repository.find_users_paginated(
+            page=page,
+            page_size=page_size,
+            status=status,
+            role=role,
+            search=search
+        )
     
     async def logout_user(self, user_id: int, access_token: str, refresh_token: Optional[str] = None) -> None:
         """用户登出"""
@@ -281,30 +297,83 @@ class UserApplicationService:
             # 为了安全，即使用户不存在也返回成功消息
             return "如果该邮箱存在，重置密码邮件已发送"
         
-        # TODO: 生成重置token并发送邮件
+        # 生成重置token并保存到数据库
         reset_token = secrets.token_urlsafe(32)
-        # 这里需要保存reset_token到数据库并设置过期时间
-        # 然后发送邮件
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)  # 1小时过期
+        
+        await self._user_repository.save_password_reset_token(
+            user_id=user.id,
+            token=reset_token,
+            expires_at=expires_at
+        )
+        
+        # 发送密码重置邮件
+        await self._email_service.send_password_reset_email(
+            to_email=user.email.value,
+            username=user.username.value,
+            token=reset_token
+        )
         
         return "重置密码邮件已发送，请查收"
     
     async def reset_password(self, token: str, new_password: str) -> None:
         """重置密码"""
-        # TODO: 验证重置token并更新密码
-        # 1. 验证token是否有效且未过期
-        # 2. 获取对应的用户
-        # 3. 验证新密码强度
-        # 4. 更新密码
-        # 5. 删除或标记token为已使用
-        pass
+        # 验证重置token
+        reset_data = await self._user_repository.get_password_reset_token(token)
+        if not reset_data:
+            raise ValidationException("无效的重置令牌")
+        
+        # 检查token是否过期
+        if reset_data['expires_at'] < datetime.now(timezone.utc):
+            raise ValidationException("重置令牌已过期")
+        
+        # 检查token是否已使用
+        if reset_data['used']:
+            raise ValidationException("重置令牌已使用")
+        
+        # 获取用户
+        user = await self._user_repository.get_by_id(reset_data['user_id'])
+        if not user:
+            raise UserNotFoundException(user_id=str(reset_data['user_id']))
+        
+        # 验证新密码强度（基本验证）
+        if len(new_password) < 8:
+            raise ValidationException("密码长度至少需要8个字符")
+        
+        # 更新密码
+        hashed_password = self._password_service.hash_password(new_password)
+        user.update_password(hashed_password)
+        await self._user_repository.save(user)
+        
+        # 标记token为已使用
+        await self._user_repository.mark_password_reset_token_used(token)
     
     async def verify_email(self, token: str) -> None:
         """验证邮箱"""
-        # TODO: 邮箱验证功能暂时跳过，待后续实现
-        # 1. 验证token是否有效
-        # 2. 获取对应的用户
-        # 3. 更新用户状态为已验证
-        pass
+        # 验证邮箱验证token
+        verification_data = await self._user_repository.get_email_verification_token(token)
+        if not verification_data:
+            raise ValidationException("无效的验证令牌")
+        
+        # 检查token是否过期
+        if verification_data['expires_at'] < datetime.now(timezone.utc):
+            raise ValidationException("验证令牌已过期")
+        
+        # 检查token是否已使用
+        if verification_data['is_verified']:
+            raise ValidationException("验证令牌已使用")
+        
+        # 获取用户并激活
+        user = await self._user_repository.get_by_id(verification_data['user_id'])
+        if not user:
+            raise UserNotFoundException(user_id=str(verification_data['user_id']))
+        
+        # 激活用户账户
+        user.activate()
+        await self._user_repository.save(user)
+        
+        # 标记token为已使用
+        await self._user_repository.mark_email_verification_token_used(token)
     
     async def resend_verification_email(self, user_id: int) -> None:
         """重新发送验证邮件"""
@@ -312,7 +381,86 @@ class UserApplicationService:
         if not user:
             raise UserNotFoundException(user_id=str(user_id))
         
-        # TODO: 邮箱验证功能暂时跳过，待后续实现
-        # verification_token = secrets.token_urlsafe(32)
-        # 保存token并发送邮件
-        pass
+        # 检查用户状态
+        if user.status == UserStatus.ACTIVE:
+            raise ValidationException("用户邮箱已经验证过了")
+        
+        # 生成新的验证token
+        verification_token = secrets.token_urlsafe(32)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=24)  # 24小时过期
+        
+        await self._user_repository.save_email_verification_token(
+            user_id=user.id,
+            token=verification_token,
+            expires_at=expires_at
+        )
+        
+        # 重新发送验证邮件
+        await self._email_service.send_verification_email(
+            to_email=user.email.value,
+            username=user.username.value,
+            token=verification_token
+        )
+    
+    async def check_username_availability(self, username: str) -> bool:
+        """检查用户名是否可用"""
+        return not await self._user_repository.exists_by_username(username)
+    
+    async def check_email_availability(self, email: str) -> bool:
+        """检查邮箱是否可用"""
+        return not await self._user_repository.exists_by_email(email)
+    
+    async def get_user_activity(self, user_id: int) -> Dict[str, Any]:
+        """获取用户活动信息"""
+        user = await self._user_repository.get_by_id(user_id)
+        if not user:
+            raise UserNotFoundException(user_id=str(user_id))
+        
+        # 返回用户活动数据
+        return {
+            "last_login_at": user.last_login_at.isoformat() if user.last_login_at else None,
+            "created_at": user.created_at.isoformat() if user.created_at else None,
+            "updated_at": user.updated_at.isoformat() if user.updated_at else None,
+            "status": user.status.value,
+            "login_count": await self._get_login_count(user_id),
+            "profile_completion": self._calculate_profile_completion(user)
+        }
+    
+    async def get_user_login_history(self, user_id: int, page: int = 1, limit: int = 20) -> Dict[str, Any]:
+        """获取用户登录历史"""
+        return await self._user_repository.get_login_history(user_id, page, limit)
+    
+    async def delete_user_account(self, user_id: int) -> None:
+        """删除用户账户"""
+        user = await self._user_repository.get_by_id(user_id)
+        if not user:
+            raise UserNotFoundException(user_id=str(user_id))
+        
+        # 软删除 - 将状态设置为已删除
+        user.deactivate()  # 使用现有的停用方法
+        await self._user_repository.save(user)
+    
+    async def _get_login_count(self, user_id: int) -> int:
+        """获取用户登录次数"""
+        try:
+            history = await self._user_repository.get_login_history(user_id, 1, 1000)
+            return history.get('total', 0)
+        except:
+            return 0
+    
+    def _calculate_profile_completion(self, user: User) -> float:
+        """计算用户资料完成度"""
+        total_fields = 6  # username, email, display_name, bio, avatar_url, timezone
+        completed_fields = 2  # username and email are always required
+        
+        if user.profile:
+            if user.profile.display_name:
+                completed_fields += 1
+            if user.profile.bio:
+                completed_fields += 1
+            if user.profile.avatar_url:
+                completed_fields += 1
+            if user.profile.timezone:
+                completed_fields += 1
+        
+        return (completed_fields / total_fields) * 100
