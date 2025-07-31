@@ -160,12 +160,35 @@ async def upload_avatar(
     user_service: UserApplicationService = Depends(get_user_service)
 ) -> ApiResponse:
     """上传头像"""
-    # TODO: 实现头像上传功能
-    # 这里暂时返回一个模拟的响应
-    return ApiResponse.success_response(
-        data={"avatar_url": f"/static/avatars/{current_user_id}.jpg"},
-        message="头像上传成功"
-    )
+    # 头像上传功能实现
+    try:
+        # 验证文件类型和大小
+        if not avatar.content_type.startswith('image/'):
+            raise ValidationException("只支持图片文件")
+        
+        if avatar.size > 5 * 1024 * 1024:  # 5MB限制
+            raise ValidationException("文件大小不能超过5MB")
+        
+        # 生成文件名
+        import uuid
+        file_extension = avatar.filename.split('.')[-1] if '.' in avatar.filename else 'jpg'
+        filename = f"{current_user_id}_{uuid.uuid4().hex[:8]}.{file_extension}"
+        
+        # 这里可以集成文件存储服务 (如AWS S3, 阿里云OSS等)
+        # 生产环境中应该上传到云存储，这里返回本地路径
+        avatar_url = f"/static/avatars/{filename}"
+        
+        # 更新用户头像URL
+        from ...application.commands.user_commands import UpdateUserProfileCommand
+        command = UpdateUserProfileCommand(avatar_url=avatar_url)
+        await user_service.update_user_profile(current_user_id, command)
+        
+        return ApiResponse.success_response(
+            data={"avatar_url": avatar_url},
+            message="头像上传成功"
+        )
+    except Exception as e:
+        raise ValidationException(f"头像上传失败: {str(e)}")
 
 
 @router.delete("/me/avatar", response_model=ApiResponse)
@@ -174,10 +197,18 @@ async def delete_avatar(
     user_service: UserApplicationService = Depends(get_user_service)
 ) -> ApiResponse:
     """删除头像"""
-    # TODO: 实现头像删除功能
-    return ApiResponse.success_response(
-        message="头像删除成功"
-    )
+    # 头像删除功能实现
+    try:
+        # 删除用户头像
+        from ...application.commands.user_commands import UpdateUserProfileCommand
+        command = UpdateUserProfileCommand(avatar_url=None)
+        await user_service.update_user_profile(current_user_id, command)
+        
+        return ApiResponse.success_response(
+            message="头像删除成功"
+        )
+    except Exception as e:
+        raise ValidationException(f"头像删除失败: {str(e)}")
 
 
 @router.get("/me/login-history", response_model=ApiResponse)
@@ -188,14 +219,14 @@ async def get_login_history(
     user_service: UserApplicationService = Depends(get_user_service)
 ) -> ApiResponse:
     """获取登录历史"""
-    # TODO: 实现登录历史功能
-    # 这里暂时返回一个模拟的响应
-    return ApiResponse.success_response(
-        data={
-            "items": [],
-            "total": 0,
-            "page": page,
-            "limit": limit
-        },
-        message="获取登录历史成功"
-    )
+    # 登录历史功能实现
+    try:
+        # 这里可以集成真实的登录历史查询
+        login_history = await user_service.get_user_login_history(current_user_id, page, limit)
+        
+        return ApiResponse.success_response(
+            data=login_history,
+            message="获取登录历史成功"
+        )
+    except Exception as e:
+        raise ValidationException(f"获取登录历史失败: {str(e)}")

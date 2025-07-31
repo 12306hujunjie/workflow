@@ -20,7 +20,7 @@ class AuthService {
       password,
     };
     
-    return apiCall(() => apiClient.post('/auth/login', loginData));
+    return apiCall(() => apiClient.post('/users/auth/login', loginData));
   }
 
   // 用户注册
@@ -31,7 +31,7 @@ class AuthService {
       password,
     };
     
-    return apiCall(() => apiClient.post('/auth/register', registerData));
+    return apiCall(() => apiClient.post('/users/auth/register', registerData));
   }
 
   // 刷新访问令牌
@@ -40,7 +40,7 @@ class AuthService {
       refresh_token: refreshToken,
     };
     
-    return apiCall(() => apiClient.post('/auth/refresh', refreshData));
+    return apiCall(() => apiClient.post('/users/auth/refresh', refreshData));
   }
 
   // 获取当前用户信息
@@ -51,7 +51,7 @@ class AuthService {
   // 修改密码
   async changePassword(currentPassword: string, newPassword: string): Promise<void> {
     const changePasswordData: ChangePasswordRequest = {
-      current_password: currentPassword,
+      old_password: currentPassword,
       new_password: newPassword,
     };
     
@@ -64,7 +64,7 @@ class AuthService {
       email,
     };
     
-    return apiCall(() => apiClient.post('/auth/forgot-password', forgotPasswordData));
+    return apiCall(() => apiClient.post('/users/auth/forgot-password', forgotPasswordData));
   }
 
   // 重置密码
@@ -74,13 +74,13 @@ class AuthService {
       new_password: newPassword,
     };
     
-    return apiCall(() => apiClient.post('/auth/reset-password', resetPasswordData));
+    return apiCall(() => apiClient.post('/users/auth/reset-password', resetPasswordData));
   }
 
   // 退出登录
   async logout(): Promise<void> {
     try {
-      await apiCall(() => apiClient.post('/auth/logout'));
+      await apiCall(() => apiClient.post('/users/auth/logout', {}));
     } catch (error) {
       // 即使后端退出失败，也要清除本地token
       console.warn('Backend logout failed:', error);
@@ -93,12 +93,12 @@ class AuthService {
 
   // 检查用户名是否可用
   async checkUsernameAvailability(username: string): Promise<{ available: boolean }> {
-    return apiCall(() => apiClient.get(`/auth/check-username?username=${encodeURIComponent(username)}`));
+    return apiCall(() => apiClient.get(`/users/auth/check-username?username=${encodeURIComponent(username)}`));
   }
 
   // 检查邮箱是否可用
   async checkEmailAvailability(email: string): Promise<{ available: boolean }> {
-    return apiCall(() => apiClient.get(`/auth/check-email?email=${encodeURIComponent(email)}`));
+    return apiCall(() => apiClient.get(`/users/auth/check-email?email=${encodeURIComponent(email)}`));
   }
 
   // 验证密码强度

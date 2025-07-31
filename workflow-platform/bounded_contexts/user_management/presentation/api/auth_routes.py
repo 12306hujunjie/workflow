@@ -48,7 +48,7 @@ async def register(
 
     return ApiResponse.success_response(
         data=user_data.model_dump(),
-        message="注册成功"  # TODO: 暂时跳过邮箱验证提示
+        message="注册成功"
     )
 
 
@@ -163,7 +163,6 @@ async def verify_email(
         user_service: UserApplicationService = Depends(get_user_service)
 ) -> ApiResponse:
     """验证邮箱"""
-    # TODO: 邮箱验证功能暂时跳过，待后续实现
     await user_service.verify_email(request.token)
 
     return ApiResponse.success_response(
@@ -177,9 +176,36 @@ async def resend_verification(
         user_service: UserApplicationService = Depends(get_user_service)
 ) -> ApiResponse:
     """重新发送验证邮件"""
-    # TODO: 邮箱验证功能暂时跳过，待后续实现
     await user_service.resend_verification_email(user_id)
 
     return ApiResponse.success_response(
         message="验证邮件已重新发送"
+    )
+
+
+@router.get("/check-username", response_model=ApiResponse)
+async def check_username_availability(
+        username: str,
+        user_service: UserApplicationService = Depends(get_user_service)
+) -> ApiResponse:
+    """检查用户名是否可用"""
+    is_available = await user_service.check_username_availability(username)
+    
+    return ApiResponse.success_response(
+        data={"available": is_available},
+        message="用户名检查完成"
+    )
+
+
+@router.get("/check-email", response_model=ApiResponse)
+async def check_email_availability(
+        email: str,
+        user_service: UserApplicationService = Depends(get_user_service)
+) -> ApiResponse:
+    """检查邮箱是否可用"""
+    is_available = await user_service.check_email_availability(email)
+    
+    return ApiResponse.success_response(
+        data={"available": is_available},
+        message="邮箱检查完成"
     )
