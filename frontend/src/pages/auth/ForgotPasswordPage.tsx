@@ -14,7 +14,7 @@ import {
   ArrowLeftOutlined,
   RocketOutlined,
 } from '@ant-design/icons';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import authService from '../../services/authService';
 
 const { Title, Text } = Typography;
@@ -28,6 +28,7 @@ const ForgotPasswordPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [isEmailSent, setIsEmailSent] = useState(false);
   const [email, setEmail] = useState('');
+  const navigate = useNavigate();
 
   // 处理表单提交
   const handleSubmit = async (values: { email: string }) => {
@@ -35,26 +36,26 @@ const ForgotPasswordPage: React.FC = () => {
     setError(null);
     
     try {
-      await authService.forgotPassword(values.email);
+      await authService.sendVerificationCode(values.email, 'reset_password');
       setEmail(values.email);
       setIsEmailSent(true);
     } catch (error: any) {
-      setError(error.message || '发送重置邮件失败，请稍后重试');
+      setError(error.message || '发送验证码失败，请稍后重试');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // 重新发送邮件
+  // 重新发送验证码
   const handleResendEmail = async () => {
     setIsLoading(true);
     setError(null);
     
     try {
-      await authService.forgotPassword(email);
+      await authService.sendVerificationCode(email, 'reset_password');
       // 可以显示成功消息
     } catch (error: any) {
-      setError(error.message || '重新发送邮件失败，请稍后重试');
+      setError(error.message || '重新发送验证码失败，请稍后重试');
     } finally {
       setIsLoading(false);
     }
@@ -68,16 +69,22 @@ const ForgotPasswordPage: React.FC = () => {
           <Card className="shadow-lg">
             <Result
               status="success"
-              title="重置邮件已发送"
-              subTitle={`我们已向 ${email} 发送了密码重置链接，请检查您的邮箱并按照邮件中的说明重置密码。`}
+              title="验证码已发送"
+              subTitle={`我们已向 ${email} 发送了6位数字验证码，请查收邮件并前往重置密码页面。`}
               extra={[
                 <Button
-                  key="resend"
+                  key="reset"
                   type="primary"
+                  onClick={() => navigate('/auth/reset-password', { state: { email } })}
+                >
+                  前往重置密码
+                </Button>,
+                <Button
+                  key="resend"
                   onClick={handleResendEmail}
                   loading={isLoading}
                 >
-                  重新发送邮件
+                  重新发送验证码
                 </Button>,
                 <Link key="back" to="/auth/login">
                   <Button>
@@ -98,7 +105,7 @@ const ForgotPasswordPage: React.FC = () => {
             
             <div className="text-center mt-6">
               <Text type="secondary" className="text-sm">
-                没有收到邮件？请检查垃圾邮件文件夹，或者
+                没有收到验证码？请检查垃圾邮件文件夹，或者
                 <Button
                   type="link"
                   onClick={handleResendEmail}
@@ -157,7 +164,7 @@ const ForgotPasswordPage: React.FC = () => {
               重置密码
             </Title>
             <Text type="secondary" className="text-base">
-              输入您的邮箱地址，我们将发送重置密码的链接
+              输入您的邮箱地址，我们将发送6位数字验证码
             </Text>
           </div>
 
@@ -209,7 +216,7 @@ const ForgotPasswordPage: React.FC = () => {
                     block
                     className="h-12"
                   >
-                    {isLoading ? '发送中...' : '发送重置链接'}
+                    {isLoading ? '发送中...' : '发送验证码'}
                   </Button>
                 </Form.Item>
               </Form>

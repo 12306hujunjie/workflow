@@ -43,7 +43,14 @@ docker-compose up -d
 uvicorn api_gateway.main:app --reload
 ```
 
-详细文档请查看 [workflow-platform/README.md](workflow-platform/README.md)
+## 📚 文档导航
+
+- **[API和部署指南](docs/API_AND_DEPLOYMENT_GUIDE.md)** - 🔥 **推荐** 完整的API文档、架构设计和部署指南
+- [项目架构文档](ARCHITECTURE.md) - 系统架构和设计原则
+- [用户模块API](docs/user-module-api.md) - 用户认证和管理API
+- [开发规则](docs/workflow/DEVELOPMENT_RULES.md) - 开发规范和最佳实践
+- [Git工作流](docs/workflow/GIT_WORKFLOW.md) - 代码提交和分支管理
+- [后端详细说明](workflow-platform/README.md) - 后端项目具体信息
 
 ## 项目结构
 

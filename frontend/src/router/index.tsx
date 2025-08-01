@@ -6,6 +6,8 @@ import { RootRedirect } from '../components/common/RootRedirect';
 import LoginPage from '../pages/auth/LoginPage';
 import RegisterPage from '../pages/auth/RegisterPage';
 import ForgotPasswordPage from '../pages/auth/ForgotPasswordPage';
+import VerifyEmailPage from '../pages/auth/VerifyEmailPage';
+import ResetPasswordPage from '../pages/auth/ResetPasswordPage';
 import { DashboardPage } from '../pages/dashboard/DashboardPage';
 import { ProfilePage } from '../pages/profile/ProfilePage';
 
@@ -41,6 +43,22 @@ export const router = createBrowserRouter([
         element: (
           <PublicRoute>
             <ForgotPasswordPage />
+          </PublicRoute>
+        ),
+      },
+      {
+        path: 'verify-email',
+        element: (
+          <PublicRoute>
+            <VerifyEmailPage />
+          </PublicRoute>
+        ),
+      },
+      {
+        path: 'reset-password',
+        element: (
+          <PublicRoute>
+            <ResetPasswordPage />
           </PublicRoute>
         ),
       },

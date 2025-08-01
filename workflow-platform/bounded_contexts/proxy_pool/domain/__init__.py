@@ -1,0 +1,1 @@
+"""Domain layer for proxy pool bounded context."""

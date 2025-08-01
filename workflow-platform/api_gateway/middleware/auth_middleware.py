@@ -76,3 +76,54 @@ async def require_admin(role: str = Depends(get_current_user_role)) -> str:
             detail="Insufficient permissions. Admin role required."
         )
     return role
+
+
+async def get_current_user_id_optional(request: Request) -> Optional[int]:
+    """获取当前用户ID（可选，用于logout等端点）"""
+    try:
+        authorization = request.headers.get("Authorization")
+        if not authorization or not authorization.startswith("Bearer "):
+            return None
+            
+        token = authorization[7:]
+        jwt_bearer_instance = JWTBearer(auto_error=False)
+        payload = await jwt_bearer_instance.verify_jwt(token)
+        
+        if payload:
+            return payload.get("user_id")
+        return None
+    except Exception:
+        return None
+
+
+class OptionalJWTBearer(HTTPBearer):
+    """可选的JWT Bearer认证（不会抛出异常）"""
+    
+    def __init__(self):
+        super(OptionalJWTBearer, self).__init__(auto_error=False)
+    
+    async def __call__(self, request: Request) -> Optional[dict]:
+        try:
+            credentials: HTTPAuthorizationCredentials = await super(OptionalJWTBearer, self).__call__(request)
+            if credentials and credentials.scheme == "Bearer":
+                payload = await self.verify_jwt(credentials.credentials)
+                return payload
+            return None
+        except Exception:
+            return None
+    
+    @inject
+    async def verify_jwt(
+        self, 
+        token: str,
+        jwt_service: JWTService = Provide[Container.jwt_service]
+    ) -> Optional[dict]:
+        """验证JWT令牌（可选）"""
+        try:
+            payload = await jwt_service.verify_access_token(token)
+            return payload
+        except Exception:
+            return None
+
+
+optional_jwt_bearer = OptionalJWTBearer()

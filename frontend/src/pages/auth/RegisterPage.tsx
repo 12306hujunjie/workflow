@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   Form,
   Input,
@@ -25,50 +25,24 @@ import {
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import { authService } from '../../services/authService';
+import { validatePasswordStrength, checkPasswordStrength } from '../../utils/passwordValidation';
 import type { RegisterFormData } from '../../types/auth';
 
 const { Title, Text } = Typography;
 
-/**
- * 密码强度检查（与后端验证规则一致）
- */
-const checkPasswordStrength = (password: string): { score: number; text: string; color: string } => {
-  let score = 0;
-  
-  if (password.length >= 8) score += 20;
-  if (/[a-z]/.test(password)) score += 20;
-  if (/[A-Z]/.test(password)) score += 20;
-  if (/[0-9]/.test(password)) score += 20;
-  if (/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) score += 20;
-  
-  if (score < 100) return { score, text: '不符合要求', color: '#ff4d4f' };
-  return { score, text: '符合要求', color: '#52c41a' };
-};
-
-/**
- * 验证密码是否符合后端要求
- */
-const validatePasswordStrength = (password: string): string | null => {
-  if (password.length < 8) {
-    return '密码长度至少需要8个字符';
-  }
-  if (!/[A-Z]/.test(password)) {
-    return '密码需要包含至少一个大写字母';
-  }
-  if (!/[a-z]/.test(password)) {
-    return '密码需要包含至少一个小写字母';
-  }
-  if (!/[0-9]/.test(password)) {
-    return '密码需要包含至少一个数字';
-  }
-  if (!/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) {
-    return '密码需要包含至少一个特殊字符';
-  }
-  return null;
-};
+// Password validation functions are now imported from centralized utility
+// This ensures 100% consistency with backend validation rules
 
 /**
  * 注册页面组件
+ * 
+ * FIXES IMPLEMENTED:
+ * 1. Memory Leak Fix: Added useEffect cleanup for timer using timerRef
+ * 2. Race Condition Fix: Added requestInProgressRef to prevent multiple concurrent API calls
+ * 3. Request Deduplication: Added AbortController for proper request cancellation
+ * 4. Proper Cleanup: Added cleanup functions for timer and abort controller
+ * 5. Enhanced Error Handling: Added proper handling for aborted requests
+ * 6. State Management: Added proper state reset on errors and success
  */
 const RegisterPage: React.FC = () => {
   const [form] = Form.useForm();
@@ -79,9 +53,42 @@ const RegisterPage: React.FC = () => {
   const { register, isLoading, error } = useAuth();
   const navigate = useNavigate();
 
+  // Refs for cleanup and request deduplication
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
+  const requestInProgressRef = useRef<boolean>(false);
 
-  // 发送验证码
+  // Cleanup function for timer
+  const clearTimer = () => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+
+  // Cleanup function for abort controller
+  const clearAbortController = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  };
+
+  // Effect for cleanup on unmount
+  useEffect(() => {
+    return () => {
+      clearTimer();
+      clearAbortController();
+    };
+  }, []);
+
+  // 发送验证码 - Fixed with proper cleanup and race condition prevention
   const handleSendCode = async () => {
+    // Prevent race conditions - check if request is already in progress
+    if (requestInProgressRef.current || sendingCode) {
+      return;
+    }
+
     try {
       const email = form.getFieldValue('email');
       if (!email) {
@@ -92,18 +99,31 @@ const RegisterPage: React.FC = () => {
       // 验证邮箱格式
       await form.validateFields(['email']);
       
+      // Set request in progress flag immediately to prevent race conditions
+      requestInProgressRef.current = true;
       setSendingCode(true);
-      await authService.sendVerificationCode(email, 'register');
+
+      // Clear any existing timer and abort controller
+      clearTimer();
+      clearAbortController();
+
+      // Create new abort controller for request cancellation
+      abortControllerRef.current = new AbortController();
+      
+      // Make API call with abort signal
+      await authService.sendVerificationCode(email, 'register', {
+        signal: abortControllerRef.current.signal
+      });
       
       setCodeSent(true);
       message.success('验证码已发送，请查收邮件');
       
-      // 开始倒计时（3分钟 = 180秒）
+      // 开始倒计时（3分钟 = 180秒）- Fixed with proper cleanup
       setCountdown(180);
-      const timer = setInterval(() => {
+      timerRef.current = setInterval(() => {
         setCountdown((prev) => {
           if (prev <= 1) {
-            clearInterval(timer);
+            clearTimer();
             return 0;
           }
           return prev - 1;
@@ -111,6 +131,11 @@ const RegisterPage: React.FC = () => {
       }, 1000);
       
     } catch (error: any) {
+      // Don't show error if request was aborted (component unmounted or new request started)
+      if (error.name === 'AbortError') {
+        return;
+      }
+      
       console.error('Send code failed:', error);
       if (error.status === 429) {
         message.error(error.message);
@@ -121,10 +146,13 @@ const RegisterPage: React.FC = () => {
       }
     } finally {
       setSendingCode(false);
+      requestInProgressRef.current = false;
+      // Clear abort controller after request completes
+      abortControllerRef.current = null;
     }
   };
 
-  // 处理表单提交
+  // 处理表单提交 - Enhanced with cleanup
   const handleSubmit = async (values: { username: string; email: string; password: string; confirmPassword: string; code: string }) => {
     // 检查是否已发送验证码
     if (!codeSent) {
@@ -139,8 +167,16 @@ const RegisterPage: React.FC = () => {
     }
 
     try {
+      // Clear any ongoing verification code requests before registration
+      clearAbortController();
+      
       await register(values.username, values.email, values.password, values.code);
       message.success('注册成功！正在跳转到登录页面...');
+      
+      // Clear timer when registration is successful
+      clearTimer();
+      setCountdown(0);
+      
       // 延迟跳转，让用户看到成功提示
       setTimeout(() => {
         navigate('/auth/login', {
@@ -156,6 +192,10 @@ const RegisterPage: React.FC = () => {
       if (error.message) {
         if (error.message.includes('验证码')) {
           message.error('验证码错误或已过期，请重新获取验证码');
+          // Reset verification code state on error
+          setCodeSent(false);
+          clearTimer();
+          setCountdown(0);
         } else if (error.message.includes('用户名')) {
           message.error('用户名已存在，请选择其他用户名');
         } else if (error.message.includes('邮箱')) {
@@ -417,7 +457,7 @@ const RegisterPage: React.FC = () => {
                       type="default"
                       onClick={handleSendCode}
                       loading={sendingCode}
-                      disabled={countdown > 0}
+                      disabled={countdown > 0 || sendingCode || requestInProgressRef.current}
                       block
                       icon={sendingCode ? <LoadingOutlined /> : undefined}
                     >

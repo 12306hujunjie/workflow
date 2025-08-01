@@ -1,5 +1,6 @@
 """用户应用服务"""
 
+import re
 import secrets
 from typing import Optional, Dict, Any, List
 from datetime import datetime, timedelta, timezone
@@ -15,6 +16,9 @@ from shared_kernel.application.exceptions import (
 from ...infrastructure.auth.password_service import PasswordService
 from ...infrastructure.auth.jwt_service import JWTService
 from shared_kernel.infrastructure.email_service import EmailService
+from shared_kernel.infrastructure.verification_code_service import VerificationCodeService
+from shared_kernel.infrastructure.redis_service import RedisService
+from shared_kernel.infrastructure.rate_limit_service import RateLimitService
 from ..commands.user_commands import (
     RegisterUserCommand, LoginUserCommand, UpdateUserProfileCommand,
     ChangePasswordCommand, ResetPasswordCommand
@@ -24,20 +28,78 @@ from ..commands.user_commands import (
 class UserApplicationService:
     """用户应用服务"""
     
+    # Email validation regex pattern - practical and secure
+    EMAIL_PATTERN = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9._%+-]*[a-zA-Z0-9])?@[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}$')
+    
     def __init__(
         self,
         user_repository: UserRepository,
         password_service: PasswordService,
         jwt_service: JWTService,
-        email_service: EmailService
+        email_service: EmailService,
+        verification_code_service: Optional[VerificationCodeService] = None,
+        rate_limit_service: Optional[RateLimitService] = None
     ):
         self._user_repository = user_repository
         self._password_service = password_service
         self._jwt_service = jwt_service
         self._email_service = email_service
+        self._verification_code_service = verification_code_service
+        self._rate_limit_service = rate_limit_service
+    
+    def _validate_email(self, email: str) -> None:
+        """验证邮箱格式 - 严格验证，与Pydantic EmailStr一致"""
+        if not email or not isinstance(email, str):
+            raise ValidationException("邮箱地址不能为空")
+        
+        email = email.strip()
+        
+        # 基本格式检查
+        if not email or '@' not in email or email.count('@') != 1:
+            raise ValidationException("请输入有效的邮箱地址")
+        
+        # 分割邮箱地址
+        local, domain = email.split('@')
+        
+        # 验证本地部分（@前面的部分）
+        if not local or len(local) > 64:
+            raise ValidationException("请输入有效的邮箱地址")
+        
+        # 验证域名部分（@后面的部分）
+        if not domain or len(domain) > 253 or '.' not in domain:
+            raise ValidationException("请输入有效的邮箱地址")
+        
+        # 验证域名格式
+        domain_parts = domain.split('.')
+        if len(domain_parts) < 2:
+            raise ValidationException("请输入有效的邮箱地址")
+        
+        # 检查每个域名部分
+        for part in domain_parts:
+            if not part or len(part) > 63:
+                raise ValidationException("请输入有效的邮箱地址")
+            # 域名部分只能包含字母、数字、连字符
+            if not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?$', part):
+                raise ValidationException("请输入有效的邮箱地址")
+        
+        # 检查顶级域名
+        tld = domain_parts[-1]
+        if len(tld) < 2 or not tld.isalpha():
+            raise ValidationException("请输入有效的邮箱地址")
+        
+        # 验证本地部分格式
+        if not re.match(r'^[a-zA-Z0-9]([a-zA-Z0-9._%+-]*[a-zA-Z0-9])?$', local):
+            raise ValidationException("请输入有效的邮箱地址")
+        
+        # Additional length check
+        if len(email) > 254:  # RFC 5321 limit
+            raise ValidationException("邮箱地址过长")
     
     async def register_user(self, command: RegisterUserCommand) -> User:
         """注册新用户"""
+        # 验证邮箱格式
+        self._validate_email(command.email)
+        
         # 验证用户名是否已存在
         user_repository: UserRepository = self._user_repository
 
@@ -62,22 +124,38 @@ class UserApplicationService:
         # 保存用户
         saved_user = await self._user_repository.save(user)
         
-        # 发送邮箱验证邮件
-        verification_token = secrets.token_urlsafe(32)
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=24)  # 24小时过期
-        
-        await self._user_repository.save_email_verification_token(
-            user_id=saved_user.id,
-            token=verification_token,
-            expires_at=expires_at
-        )
-        
-        # 发送验证邮件
-        await self._email_service.send_verification_email(
-            to_email=saved_user.email.value,
-            username=saved_user.username.value,
-            token=verification_token
-        )
+        # 发送邮箱验证邮件（使用验证码）
+        if self._verification_code_service:
+            # 新的验证码模式
+            verification_code = await self._verification_code_service.generate_and_store_code(
+                email=saved_user.email.value,
+                purpose="register"
+            )
+            
+            # 发送验证码邮件
+            await self._email_service.send_verification_code_email(
+                to_email=saved_user.email.value,
+                username=saved_user.username.value,
+                code=verification_code,
+                purpose="register"
+            )
+        else:
+            # 兼容旧的token模式
+            verification_token = secrets.token_urlsafe(32)
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=24)  # 24小时过期
+            
+            await self._user_repository.save_email_verification_token(
+                user_id=saved_user.id,
+                token=verification_token,
+                expires_at=expires_at
+            )
+            
+            # 发送验证邮件
+            await self._email_service.send_verification_email(
+                to_email=saved_user.email.value,
+                username=saved_user.username.value,
+                token=verification_token
+            )
         
         return saved_user
     
@@ -292,29 +370,49 @@ class UserApplicationService:
     
     async def forgot_password(self, email: str) -> str:
         """忘记密码 - 发送重置邮件"""
+        # 验证邮箱格式
+        self._validate_email(email)
+        
         user = await self._user_repository.get_by_email(email)
         if not user:
             # 为了安全，即使用户不存在也返回成功消息
-            return "如果该邮箱存在，重置密码邮件已发送"
+            return "如果该邮箱存在，重置密码验证码已发送"
         
-        # 生成重置token并保存到数据库
-        reset_token = secrets.token_urlsafe(32)
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=1)  # 1小时过期
-        
-        await self._user_repository.save_password_reset_token(
-            user_id=user.id,
-            token=reset_token,
-            expires_at=expires_at
-        )
-        
-        # 发送密码重置邮件
-        await self._email_service.send_password_reset_email(
-            to_email=user.email.value,
-            username=user.username.value,
-            token=reset_token
-        )
-        
-        return "重置密码邮件已发送，请查收"
+        if self._verification_code_service:
+            # 新的验证码模式
+            reset_code = await self._verification_code_service.generate_and_store_code(
+                email=user.email.value,
+                purpose="reset_password"
+            )
+            
+            # 发送验证码邮件
+            await self._email_service.send_verification_code_email(
+                to_email=user.email.value,
+                username=user.username.value,
+                code=reset_code,
+                purpose="reset_password"
+            )
+            
+            return "重置密码验证码已发送，请查收"
+        else:
+            # 兼容旧的token模式
+            reset_token = secrets.token_urlsafe(32)
+            expires_at = datetime.now(timezone.utc) + timedelta(hours=1)  # 1小时过期
+            
+            await self._user_repository.save_password_reset_token(
+                user_id=user.id,
+                token=reset_token,
+                expires_at=expires_at
+            )
+            
+            # 发送密码重置邮件
+            await self._email_service.send_password_reset_email(
+                to_email=user.email.value,
+                username=user.username.value,
+                token=reset_token
+            )
+            
+            return "重置密码邮件已发送，请查收"
     
     async def reset_password(self, token: str, new_password: str) -> None:
         """重置密码"""
@@ -347,6 +445,147 @@ class UserApplicationService:
         
         # 标记token为已使用
         await self._user_repository.mark_password_reset_token_used(token)
+    
+    async def verify_code_only(self, email: str, code: str, purpose: str) -> None:
+        """纯验证码验证（不检查用户存在性）"""
+        # 验证邮箱格式
+        self._validate_email(email)
+        
+        if not self._verification_code_service:
+            raise ValidationException("验证码服务未启用")
+        
+        # 验证验证码
+        is_valid = await self._verification_code_service.verify_code(
+            email=email,
+            purpose=purpose,
+            code=code
+        )
+        
+        if not is_valid:
+            raise ValidationException("验证码错误或已过期")
+    
+    async def verify_email_with_code(self, email: str, code: str) -> None:
+        """使用验证码验证邮箱并激活用户（仅用于邮箱验证激活场景）"""
+        # 验证邮箱格式
+        self._validate_email(email)
+        
+        # 先验证验证码
+        await self.verify_code_only(email, code, "register")
+        
+        # 获取用户并激活
+        user = await self._user_repository.get_by_email(email)
+        if not user:
+            raise UserNotFoundException(f"邮箱 {email} 对应的用户不存在")
+        
+        # 激活用户账户
+        user.activate()
+        await self._user_repository.save(user)
+    
+    async def reset_password_with_code(self, email: str, code: str, new_password: str) -> None:
+        """使用验证码重置密码"""
+        # 验证邮箱格式
+        self._validate_email(email)
+        
+        if not self._verification_code_service:
+            raise ValidationException("验证码服务未启用")
+        
+        # 先验证验证码
+        await self.verify_code_only(email, code, "reset_password")
+        
+        # 获取用户
+        user = await self._user_repository.get_by_email(email)
+        if not user:
+            raise UserNotFoundException(f"邮箱 {email} 对应的用户不存在")
+        
+        # 验证新密码强度（基本验证）
+        if len(new_password) < 8:
+            raise ValidationException("密码长度至少需要8个字符")
+        
+        # 更新密码
+        hashed_password = self._password_service.hash_password(new_password)
+        user.update_password(hashed_password)
+        await self._user_repository.save(user)
+    
+    async def resend_verification_code(self, email: str, purpose: str) -> str:
+        """重新发送验证码"""
+        # 验证邮箱格式
+        self._validate_email(email)
+        
+        if not self._verification_code_service:
+            raise ValidationException("验证码服务未启用")
+        
+        # 检查用户是否存在
+        user = await self._user_repository.get_by_email(email)
+        if not user:
+            return "如果该邮箱存在，验证码已重新发送"
+        
+        # 生成新的验证码（会覆盖旧的）
+        code = await self._verification_code_service.generate_and_store_code(
+            email=email,
+            purpose=purpose
+        )
+        
+        # 发送验证码邮件
+        await self._email_service.send_verification_code_email(
+            to_email=email,
+            username=user.username.value,
+            code=code,
+            purpose=purpose
+        )
+        
+        return "验证码已重新发送，请查收"
+
+    async def send_verification_code_with_rate_limit(
+        self, 
+        email: str, 
+        purpose: str, 
+        client_ip: str
+    ) -> str:
+        """发送验证码（带频率限制）"""
+        # 验证邮箱格式
+        self._validate_email(email)
+        
+        if not self._verification_code_service:
+            raise ValidationException("验证码服务未启用")
+        
+        if not self._rate_limit_service:
+            raise ValidationException("频率限制服务未启用")
+        
+        # 应用频率限制（IP + 邮箱 + 接口名，3分钟限制）
+        endpoint = f"send_verification_code_{purpose}"
+        await self._rate_limit_service.apply_rate_limit(
+            ip=client_ip,
+            email=email,
+            endpoint=endpoint,
+            limit_seconds=180  # 3分钟
+        )
+        
+        # 生成新的验证码（会覆盖旧的）
+        code = await self._verification_code_service.generate_and_store_code(
+            email=email,
+            purpose=purpose
+        )
+        
+        # 根据用途确定用户名
+        username = "用户"  # 默认用户名
+        if purpose == "register":
+            # 注册时可能用户还不存在，使用默认用户名
+            username = "新用户"
+        else:
+            # 重置密码时，用户应该存在
+            user = await self._user_repository.get_by_email(email)
+            if user:
+                username = user.username.value
+        
+        # 发送验证码邮件
+        await self._email_service.send_verification_code_email(
+            to_email=email,
+            username=username,
+            code=code,
+            purpose=purpose
+        )
+        
+        return "验证码已发送，请查收邮件"
     
     async def verify_email(self, token: str) -> None:
         """验证邮箱"""
@@ -408,6 +647,9 @@ class UserApplicationService:
     
     async def check_email_availability(self, email: str) -> bool:
         """检查邮箱是否可用"""
+        # 验证邮箱格式
+        self._validate_email(email)
+        
         return not await self._user_repository.exists_by_email(email)
     
     async def get_user_activity(self, user_id: int) -> Dict[str, Any]:

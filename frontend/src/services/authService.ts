@@ -1,4 +1,5 @@
 import apiClient, { apiCall } from './api';
+import { validatePasswordForService, getPasswordStrengthLevel } from '../utils/passwordValidation';
 import {
   type LoginRequest,
   type LoginResponse,
@@ -23,15 +24,9 @@ class AuthService {
     return apiCall(() => apiClient.post('/users/auth/login', loginData));
   }
 
-  // 用户注册
-  async register(username: string, email: string, password: string): Promise<RegisterResponse> {
-    const registerData: RegisterRequest = {
-      username,
-      email,
-      password,
-    };
-    
-    return apiCall(() => apiClient.post('/users/auth/register', registerData));
+  // 用户注册（现在需要验证码）
+  async register(username: string, email: string, password: string, code: string): Promise<RegisterResponse> {
+    return this.registerWithCode(username, email, password, code);
   }
 
   // 刷新访问令牌
@@ -77,6 +72,46 @@ class AuthService {
     return apiCall(() => apiClient.post('/users/auth/reset-password', resetPasswordData));
   }
 
+  // 发送验证码 - 支持 AbortController
+  async sendVerificationCode(email: string, purpose: 'register' | 'reset_password', options?: { signal?: AbortSignal }): Promise<void> {
+    const sendData = {
+      email,
+      purpose,
+    };
+    
+    return apiCall(() => apiClient.post('/users/auth/send-verification-code', sendData, {
+      signal: options?.signal
+    }));
+  }
+
+  // 重新发送验证码（别名方法，兼容不同调用方式）
+  async resendVerificationCode(email: string, purpose: 'register' | 'reset_password', options?: { signal?: AbortSignal }): Promise<void> {
+    return this.sendVerificationCode(email, purpose, options);
+  }
+
+  // 用户注册（包含验证码）
+  async registerWithCode(username: string, email: string, password: string, code: string): Promise<RegisterResponse> {
+    const registerData = {
+      username,
+      email,
+      password,
+      code,
+    };
+    
+    return apiCall(() => apiClient.post('/users/auth/register', registerData));
+  }
+
+  // 重置密码（包含验证码）
+  async resetPasswordWithCode(email: string, code: string, newPassword: string): Promise<void> {
+    const resetData = {
+      email,
+      code,
+      new_password: newPassword,
+    };
+    
+    return apiCall(() => apiClient.post('/users/auth/reset-password', resetData));
+  }
+
   // 退出登录
   async logout(): Promise<void> {
     try {
@@ -101,72 +136,22 @@ class AuthService {
     return apiCall(() => apiClient.get(`/users/auth/check-email?email=${encodeURIComponent(email)}`));
   }
 
-  // 验证密码强度
+  // 验证密码强度（使用统一工具函数，与后端完全一致）
   validatePasswordStrength(password: string): {
     score: number;
     feedback: string[];
     isValid: boolean;
   } {
-    const feedback: string[] = [];
-    let score = 0;
-
-    // 长度检查
-    if (password.length >= 8) {
-      score += 1;
-    } else {
-      feedback.push('密码至少需要8个字符');
-    }
-
-    // 大写字母
-    if (/[A-Z]/.test(password)) {
-      score += 1;
-    } else {
-      feedback.push('需要包含大写字母');
-    }
-
-    // 小写字母
-    if (/[a-z]/.test(password)) {
-      score += 1;
-    } else {
-      feedback.push('需要包含小写字母');
-    }
-
-    // 数字
-    if (/\d/.test(password)) {
-      score += 1;
-    } else {
-      feedback.push('需要包含数字');
-    }
-
-    // 特殊字符
-    if (/[^\w\s]/.test(password)) {
-      score += 1;
-    } else {
-      feedback.push('需要包含特殊字符');
-    }
-
-    return {
-      score,
-      feedback,
-      isValid: score >= 4,
-    };
+    return validatePasswordForService(password);
   }
 
-  // 获取密码强度等级
+  // 获取密码强度等级（使用统一工具函数）
   getPasswordStrengthLevel(score: number): {
     level: 'weak' | 'fair' | 'good' | 'strong';
     label: string;
     color: string;
   } {
-    if (score <= 2) {
-      return { level: 'weak', label: '弱', color: '#ef4444' };
-    } else if (score === 3) {
-      return { level: 'fair', label: '一般', color: '#f59e0b' };
-    } else if (score === 4) {
-      return { level: 'good', label: '良好', color: '#10b981' };
-    } else {
-      return { level: 'strong', label: '强', color: '#059669' };
-    }
+    return getPasswordStrengthLevel(score);
   }
 }
 

@@ -69,10 +69,21 @@ class ResetPasswordRequest(BaseModel):
     token: str = Field(..., description="重置令牌")
     new_password: str = Field(..., min_length=8, description="新密码")
 
+class ResetPasswordWithCodeRequest(BaseModel):
+    """使用验证码重置密码请求"""
+    email: EmailStr = Field(..., description="邮箱地址")
+    code: str = Field(..., description="6位验证码", min_length=6, max_length=6)
+    new_password: str = Field(..., min_length=8, description="新密码")
+
     @field_validator("new_password")
     @classmethod
     def validate_new_password(cls, v):
         return validate_password_strength(v)
+
+class ResendVerificationCodeRequest(BaseModel):
+    """重新发送验证码请求"""
+    email: EmailStr = Field(..., description="邮箱地址")
+    purpose: str = Field(..., description="验证码用途", pattern="^(register|reset_password)$")
 
 
 class RefreshTokenRequest(BaseModel):
@@ -84,6 +95,11 @@ class EmailVerificationRequest(BaseModel):
     """邮箱验证请求"""
     token: str = Field(..., description="验证令牌")
 
+class EmailVerificationCodeRequest(BaseModel):
+    """邮箱验证码验证请求"""
+    email: EmailStr = Field(..., description="邮箱地址")
+    code: str = Field(..., description="6位验证码", min_length=6, max_length=6)
+
 
 class LogoutRequest(BaseModel):
     """登出请求"""
@@ -91,10 +107,11 @@ class LogoutRequest(BaseModel):
 
 
 class RegisterUserRequest(BaseModel):
-    """用户注册请求（新版本）"""
+    """用户注册请求（包含验证码）"""
     username: str = Field(..., min_length=3, max_length=50, description="用户名")
     email: EmailStr = Field(..., description="邮箱地址")
     password: str = Field(..., min_length=8, description="密码")
+    code: str = Field(..., description="6位验证码", min_length=6, max_length=6)
 
     @field_validator("password")
     @classmethod

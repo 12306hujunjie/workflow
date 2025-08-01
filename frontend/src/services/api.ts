@@ -2,7 +2,7 @@ import axios, { type AxiosInstance, type AxiosResponse, AxiosError } from 'axios
 import { type ApiResponse, type ApiError } from '../types/auth';
 
 // API基础配置
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8001/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
 // 创建axios实例
 const apiClient: AxiosInstance = axios.create({
@@ -41,7 +41,7 @@ apiClient.interceptors.response.use(
       try {
         const refreshToken = localStorage.getItem('refresh_token');
         if (refreshToken) {
-          const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {
+          const response = await axios.post(`${API_BASE_URL}/users/auth/refresh`, {
             refresh_token: refreshToken,
           });
           

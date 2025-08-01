@@ -43,14 +43,18 @@ class EmailService(ABC):
         pass
     
     @abstractmethod
-    async def send_verification_email(self, to_email: str, username: str, token: str) -> bool:
-        """发送邮箱验证邮件"""
+    async def send_verification_code_email(self, to_email: str, username: str, code: str, purpose: str) -> bool:
+        """发送验证码邮件"""
         pass
     
-    @abstractmethod
+    # 保持兼容性的旧方法
+    async def send_verification_email(self, to_email: str, username: str, token: str) -> bool:
+        """发送邮箱验证邮件（兼容性方法）"""
+        return await self.send_verification_code_email(to_email, username, token, "register")
+    
     async def send_password_reset_email(self, to_email: str, username: str, token: str) -> bool:
-        """发送密码重置邮件"""
-        pass
+        """发送密码重置邮件（兼容性方法）"""
+        return await self.send_verification_code_email(to_email, username, token, "reset_password")
 
 
 class SMTPEmailService(EmailService):
@@ -91,7 +95,8 @@ class SMTPEmailService(EmailService):
             # 创建邮件消息
             msg = MIMEMultipart('alternative')
             msg['Subject'] = subject
-            msg['From'] = f"{self.config.from_name} <{self.config.from_email}>"
+            # QQ Mail requires simple From format for compliance
+            msg['From'] = self.config.from_email
             msg['To'] = to_email
             
             # 添加文本内容
@@ -104,12 +109,26 @@ class SMTPEmailService(EmailService):
             msg.attach(html_part)
             
             # 发送邮件
-            with smtplib.SMTP(self.config.smtp_host, self.config.smtp_port) as server:
+            server = smtplib.SMTP(self.config.smtp_host, self.config.smtp_port)
+            try:
                 if self.config.smtp_use_tls:
                     server.starttls()
                 
                 server.login(self.config.smtp_username, self.config.smtp_password)
                 server.send_message(msg)
+                
+            except smtplib.SMTPAuthenticationError as e:
+                logger.error(f"SMTP认证失败: {str(e)}")
+                raise
+            except smtplib.SMTPException as e:
+                logger.error(f"SMTP错误: {str(e)}")
+                raise
+            finally:
+                try:
+                    server.quit()
+                except:
+                    # Ignore cleanup errors
+                    pass
             
             logger.info(f"邮件发送成功: {to_email}")
             return True
@@ -118,36 +137,62 @@ class SMTPEmailService(EmailService):
             logger.error(f"SMTP邮件发送失败: {str(e)}")
             return False
     
-    async def send_verification_email(self, to_email: str, username: str, token: str) -> bool:
-        """发送邮箱验证邮件"""
-        # 构建验证链接
-        verify_url = f"http://localhost:5173/auth/verify-email?token={token}"
+    async def send_verification_code_email(self, to_email: str, username: str, code: str, purpose: str) -> bool:
+        """发送验证码邮件"""
+        # 根据用途设置邮件内容
+        if purpose == "register":
+            subject = "邮箱验证码 - 智能工作流管理平台"
+            purpose_text = "注册账户"
+            action_text = "完成注册"
+        elif purpose == "reset_password":
+            subject = "密码重置验证码 - 智能工作流管理平台"
+            purpose_text = "重置密码"
+            action_text = "重置密码"
+        else:
+            subject = "验证码 - 智能工作流管理平台"
+            purpose_text = "验证身份"
+            action_text = "继续操作"
         
         html_content = f"""
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8">
-            <title>邮箱验证</title>
+            <title>{subject}</title>
         </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                <h2 style="color: #1890ff;">邮箱验证</h2>
-                <p>亲爱的 {username}，</p>
-                <p>欢迎注册智能工作流管理平台！请点击下面的链接验证您的邮箱地址：</p>
-                <div style="text-align: center; margin: 30px 0;">
-                    <a href="{verify_url}" 
-                       style="display: inline-block; background-color: #1890ff; color: white; 
-                              padding: 12px 30px; text-decoration: none; border-radius: 5px;">
-                        验证邮箱
-                    </a>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; background-color: #f5f5f5;">
+            <div style="max-width: 600px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+                <div style="text-align: center; margin-bottom: 30px;">
+                    <h1 style="color: #1890ff; margin: 0; font-size: 24px;">智能工作流管理平台</h1>
                 </div>
-                <p>如果上述按钮无法点击，请复制以下链接到浏览器地址栏：</p>
-                <p style="word-break: break-all; background: #f5f5f5; padding: 10px; border-radius: 3px;">
-                    {verify_url}
-                </p>
-                <p style="color: #999; font-size: 12px;">
-                    此链接将在24小时后过期。如果您没有注册此账户，请忽略此邮件。
+                
+                <h2 style="color: #333; text-align: center; margin-bottom: 20px;">{purpose_text}验证码</h2>
+                
+                <p style="font-size: 16px;">尊敬的 <strong>{username}</strong>，</p>
+                
+                <p style="font-size: 16px;">您正在{purpose_text}，请使用以下验证码{action_text}：</p>
+                
+                <div style="text-align: center; margin: 40px 0;">
+                    <div style="display: inline-block; background-color: #f0f8ff; border: 2px dashed #1890ff; border-radius: 8px; padding: 20px 40px;">
+                        <span style="font-size: 32px; font-weight: bold; color: #1890ff; letter-spacing: 8px; font-family: 'Courier New', monospace;">
+                            {code}
+                        </span>
+                    </div>
+                </div>
+                
+                <div style="background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px; padding: 15px; margin: 20px 0;">
+                    <p style="margin: 0; color: #856404; font-size: 14px;">
+                        <strong>安全提醒：</strong>
+                        <br>• 验证码有效期为 <strong>5分钟</strong>
+                        <br>• 验证码仅可使用 <strong>一次</strong>
+                        <br>• 请勿向他人泄露验证码
+                    </p>
+                </div>
+                
+                <p style="color: #999; font-size: 12px; text-align: center; margin-top: 30px; border-top: 1px solid #eee; padding-top: 20px;">
+                    如果您没有进行此操作，请忽略此邮件。此验证码将在5分钟后自动失效。
+                    <br>
+                    © 2024 智能工作流管理平台 保留所有权利
                 </p>
             </div>
         </body>
@@ -155,68 +200,34 @@ class SMTPEmailService(EmailService):
         """
         
         text_content = f"""
-        邮箱验证
-        
-        亲爱的 {username}，
-        
-        欢迎注册智能工作流管理平台！请访问以下链接验证您的邮箱地址：
-        
-        {verify_url}
-        
-        此链接将在24小时后过期。如果您没有注册此账户，请忽略此邮件。
+智能工作流管理平台 - {purpose_text}验证码
+
+尊敬的 {username}，
+
+您正在{purpose_text}，请使用以下验证码{action_text}：
+
+验证码：{code}
+
+安全提醒：
+• 验证码有效期为5分钟
+• 验证码仅可使用一次
+• 请勿向他人泄露验证码
+
+如果您没有进行此操作，请忽略此邮件。
+
+© 2024 智能工作流管理平台
         """
         
-        return await self.send_email(to_email, "邮箱验证 - 智能工作流管理平台", html_content, text_content)
+        return await self.send_email(to_email, subject, html_content, text_content)
+    
+    # 老的方法保留，用于兼容性
+    async def send_verification_email(self, to_email: str, username: str, token: str) -> bool:
+        """发送邮箱验证邮件（兼容性方法）"""
+        return await self.send_verification_code_email(to_email, username, token, "register")
     
     async def send_password_reset_email(self, to_email: str, username: str, token: str) -> bool:
-        """发送密码重置邮件"""
-        # 构建重置链接
-        reset_url = f"http://localhost:5173/auth/reset-password?token={token}"
-        
-        html_content = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset="utf-8">
-            <title>密码重置</title>
-        </head>
-        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-            <div style="max-width: 600px; margin: 0 auto; padding: 20px;">
-                <h2 style="color: #ff4d4f;">密码重置</h2>
-                <p>亲爱的 {username}，</p>
-                <p>我们收到了您的密码重置请求。请点击下面的链接重置您的密码：</p>
-                <div style="text-align: center; margin: 30px 0;">
-                    <a href="{reset_url}" 
-                       style="display: inline-block; background-color: #ff4d4f; color: white; 
-                              padding: 12px 30px; text-decoration: none; border-radius: 5px;">
-                        重置密码
-                    </a>
-                </div>
-                <p>如果上述按钮无法点击，请复制以下链接到浏览器地址栏：</p>
-                <p style="word-break: break-all; background: #f5f5f5; padding: 10px; border-radius: 3px;">
-                    {reset_url}
-                </p>
-                <p style="color: #999; font-size: 12px;">
-                    此链接将在1小时后过期。如果您没有请求重置密码，请忽略此邮件。
-                </p>
-            </div>
-        </body>
-        </html>
-        """
-        
-        text_content = f"""
-        密码重置
-        
-        亲爱的 {username}，
-        
-        我们收到了您的密码重置请求。请访问以下链接重置您的密码：
-        
-        {reset_url}
-        
-        此链接将在1小时后过期。如果您没有请求重置密码，请忽略此邮件。
-        """
-        
-        return await self.send_email(to_email, "密码重置 - 智能工作流管理平台", html_content, text_content)
+        """发送密码重置邮件（兼容性方法）"""
+        return await self.send_verification_code_email(to_email, username, token, "reset_password")
 
 
 class MockEmailService(EmailService):
@@ -245,22 +256,21 @@ class MockEmailService(EmailService):
         logger.info(f"[MOCK] 邮件已发送到 {to_email}: {subject}")
         return True
     
+    async def send_verification_code_email(self, to_email: str, username: str, code: str, purpose: str) -> bool:
+        """模拟发送验证码邮件"""
+        logger.info(f"[MOCK] 验证码邮件发送到 {to_email}")
+        logger.info(f"[MOCK] 用户: {username}, 验证码: {code}, 用途: {purpose}")
+        
+        subject = f"验证码 - {purpose}"
+        html_content = f"验证码: {code} (用途: {purpose})"
+        
+        return await self.send_email(to_email, subject, html_content)
+    
+    # 兼容性方法
     async def send_verification_email(self, to_email: str, username: str, token: str) -> bool:
-        """模拟发送邮箱验证邮件"""
-        verify_url = f"http://localhost:5173/auth/verify-email?token={token}"
-        html_content = f"验证链接: {verify_url}"
-        
-        logger.info(f"[MOCK] 邮箱验证邮件发送到 {to_email}")
-        logger.info(f"[MOCK] 验证链接: {verify_url}")
-        
-        return await self.send_email(to_email, "邮箱验证", html_content)
+        """模拟发送邮箱验证邮件（兼容性方法）"""
+        return await self.send_verification_code_email(to_email, username, token, "register")
     
     async def send_password_reset_email(self, to_email: str, username: str, token: str) -> bool:
-        """模拟发送密码重置邮件"""
-        reset_url = f"http://localhost:5173/auth/reset-password?token={token}"
-        html_content = f"重置链接: {reset_url}"
-        
-        logger.info(f"[MOCK] 密码重置邮件发送到 {to_email}")
-        logger.info(f"[MOCK] 重置链接: {reset_url}")
-        
-        return await self.send_email(to_email, "密码重置", html_content)
+        """模拟发送密码重置邮件（兼容性方法）"""
+        return await self.send_verification_code_email(to_email, username, token, "reset_password")

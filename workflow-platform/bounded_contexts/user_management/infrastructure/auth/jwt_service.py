@@ -15,7 +15,7 @@ class JWTService:
         self, 
         secret_key: Optional[str] = None,
         algorithm: str = "HS256",
-        access_token_expire_minutes: int = 30,
+        access_token_expire_minutes: int = 15,
         refresh_token_expire_days: int = 7,
         redis_service: Optional[RedisService] = None
     ):
@@ -85,6 +85,12 @@ class JWTService:
         if await self.is_token_blacklisted(token):
             raise ValueError("令牌已被撤销")
         
+        # 检查用户的所有token是否被撤销
+        user_id = payload.get("user_id")
+        token_issued_at = datetime.fromtimestamp(payload.get("iat"), tz=timezone.utc)
+        if await self.is_user_tokens_blacklisted(user_id, token_issued_at):
+            raise ValueError("用户令牌已被全部撤销")
+        
         return {
             "user_id": payload.get("user_id"),
             "username": payload.get("username"),
@@ -102,6 +108,12 @@ class JWTService:
         # 检查token是否在黑名单中
         if await self.is_token_blacklisted(token):
             raise ValueError("令牌已被撤销")
+        
+        # 检查用户的所有token是否被撤销
+        user_id = payload.get("user_id")
+        token_issued_at = datetime.fromtimestamp(payload.get("iat"), tz=timezone.utc)
+        if await self.is_user_tokens_blacklisted(user_id, token_issued_at):
+            raise ValueError("用户令牌已被全部撤销")
         
         return {
             "user_id": payload.get("user_id"),

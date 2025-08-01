@@ -75,7 +75,7 @@ jobs:
         echo "TEST_DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/workflow_platform_test" >> .env
         echo "REDIS_URL=redis://localhost:6379/0" >> .env
         echo "JWT_SECRET_KEY=test-secret-key-for-ci-validation" >> .env
-        echo "JWT_ACCESS_TOKEN_EXPIRE_MINUTES=30" >> .env
+        echo "JWT_ACCESS_TOKEN_EXPIRE_MINUTES=15" >> .env
         echo "BCRYPT_ROUNDS=4" >> .env
     
     - name: Run Profile API Fix Tests

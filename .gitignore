@@ -211,3 +211,15 @@ claude-flow.config.json
 ehthumbs.db
 Thumbs.db
 
+
+# Temporary test files
+test_*.py
+debug_*.py
+demo_*.py
+*_test_temp.py
+validate_*.py
+integration_test_*.py
+
+# Keep proper test structure
+!workflow-platform/tests/**/*.py
+!frontend/src/**/*.test.*

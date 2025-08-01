@@ -1,6 +1,6 @@
 """认证API路由"""
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, HTTPException
 
 from api_gateway.middleware.auth_middleware import get_current_user_id
 from shared_kernel.application.api_response import ApiResponse
@@ -8,6 +8,7 @@ from ..dependencies import get_user_service
 from ..schemas.user_schemas import (
     RegisterUserRequest, UserLoginRequest, ForgotPasswordRequest,
     ResetPasswordRequest, RefreshTokenRequest, EmailVerificationRequest,
+    EmailVerificationCodeRequest, ResetPasswordWithCodeRequest, ResendVerificationCodeRequest,
     LogoutRequest, LoginResponse, TokenResponse, UserResponse, UserProfileResponse
 )
 from ...application.commands.user_commands import (
@@ -26,7 +27,11 @@ async def register(
         request: RegisterUserRequest,
         user_service: UserApplicationService = Depends(get_user_service)
 ) -> ApiResponse:
-    """用户注册"""
+    """用户注册（包含验证码验证）"""
+    # 先验证验证码（注册场景不检查用户存在性）
+    await user_service.verify_code_only(request.email, request.code, "register")
+    
+    # 验证码正确后进行注册
     command = RegisterUserCommand(
         username=request.username,
         email=request.email,
@@ -114,73 +119,100 @@ async def refresh_token(
 
 @router.post("/logout", response_model=ApiResponse)
 async def logout(
-        logout_request: LogoutRequest,
         request: Request,
-        user_id: int = Depends(get_current_user_id),
+        logout_request: LogoutRequest = None,
         user_service: UserApplicationService = Depends(get_user_service)
 ) -> ApiResponse:
-    """用户登出"""
-    # 获取当前access token
+    """用户登出 - 不需要有效认证"""
+    # 处理可选的logout_request参数
+    if logout_request is None:
+        logout_request = LogoutRequest()
+    
+    # 获取当前access token（如果存在）
     authorization = request.headers.get("Authorization")
+    access_token = None
+    user_id = None
+    
     if authorization and authorization.startswith("Bearer "):
         access_token = authorization[7:]
-        await user_service.logout_user(user_id, access_token, logout_request.refresh_token)
+        
+        # 尝试从token中获取用户ID（不验证有效性）
+        try:
+            # 使用依赖注入容器获取JWT服务
+            jwt_service = user_service._jwt_service
+            
+            # 直接解码token（不验证有效性）
+            payload = jwt_service.decode_token(access_token)
+            user_id = payload.get("user_id")
+        except Exception:
+            # Token无效或过期，但仍继续处理logout
+            pass
+    
+    # 执行logout操作（即使token无效也要尝试清理）
+    if access_token:
+        try:
+            if user_id:
+                # 如果有用户ID，使用完整的logout流程
+                await user_service.logout_user(user_id, access_token, logout_request.refresh_token)
+            else:
+                # 如果没有用户ID，至少尝试将token加入黑名单
+                jwt_service = user_service._jwt_service
+                await jwt_service.blacklist_token(access_token)
+        except Exception as e:
+            # 即使logout服务失败，也返回成功（前端会清理本地token）
+            print(f"Logout service error (ignored): {e}")
+            pass
 
     return ApiResponse.success_response(
         message="登出成功"
     )
 
 
-@router.post("/forgot-password", response_model=ApiResponse)
-async def forgot_password(
-        request: ForgotPasswordRequest,
-        user_service: UserApplicationService = Depends(get_user_service)
-) -> ApiResponse:
-    """忘记密码"""
-    message = await user_service.forgot_password(request.email)
-
-    return ApiResponse.success_response(
-        message=message
-    )
 
 
 @router.post("/reset-password", response_model=ApiResponse)
 async def reset_password(
-        request: ResetPasswordRequest,
+        request: ResetPasswordWithCodeRequest,
         user_service: UserApplicationService = Depends(get_user_service)
 ) -> ApiResponse:
-    """重置密码"""
-    await user_service.reset_password(request.token, request.new_password)
+    """重置密码（包含验证码验证）"""
+    await user_service.reset_password_with_code(request.email, request.code, request.new_password)
 
     return ApiResponse.success_response(
         message="密码重置成功"
     )
 
 
-@router.post("/verify-email", response_model=ApiResponse)
-async def verify_email(
-        request: EmailVerificationRequest,
+
+
+@router.post("/send-verification-code", response_model=ApiResponse)
+async def send_verification_code(
+        request: ResendVerificationCodeRequest,
+        http_request: Request,
         user_service: UserApplicationService = Depends(get_user_service)
 ) -> ApiResponse:
-    """验证邮箱"""
-    await user_service.verify_email(request.token)
-
-    return ApiResponse.success_response(
-        message="邮箱验证成功"
-    )
-
-
-@router.post("/resend-verification", response_model=ApiResponse)
-async def resend_verification(
-        user_id: int = Depends(get_current_user_id),
-        user_service: UserApplicationService = Depends(get_user_service)
-) -> ApiResponse:
-    """重新发送验证邮件"""
-    await user_service.resend_verification_email(user_id)
-
-    return ApiResponse.success_response(
-        message="验证邮件已重新发送"
-    )
+    """发送验证码（带IP频率限制）"""
+    client_ip = http_request.client.host
+    
+    # 额外的邮箱验证（确保安全）
+    try:
+        from pydantic import EmailStr, ValidationError as PydanticValidationError
+        EmailStr._validate(request.email, None)
+    except (PydanticValidationError, ValueError) as e:
+        raise HTTPException(status_code=422, detail="请输入有效的邮箱地址")
+    
+    # 检查IP频率限制（3分钟）
+    try:
+        message = await user_service.send_verification_code_with_rate_limit(
+            email=request.email, 
+            purpose=request.purpose, 
+            client_ip=client_ip
+        )
+        
+        return ApiResponse.success_response(message=message)
+    except ValueError as e:
+        # 频率限制或其他业务错误
+        raise HTTPException(status_code=429, detail=str(e))
 
 
 @router.get("/check-username", response_model=ApiResponse)
@@ -209,3 +241,103 @@ async def check_email_availability(
         data={"available": is_available},
         message="邮箱检查完成"
     )
+
+
+# PUBLIC ENDPOINTS - NO AUTHENTICATION REQUIRED
+
+@router.post("/public-logout", response_model=ApiResponse)
+async def public_logout(
+        request: Request,
+        user_service: UserApplicationService = Depends(get_user_service)
+) -> ApiResponse:
+    """公开登出端点 - 不需要认证"""
+    # 获取当前access token（如果存在）
+    authorization = request.headers.get("Authorization")
+    access_token = None
+    user_id = None
+    
+    if authorization and authorization.startswith("Bearer "):
+        access_token = authorization[7:]
+        
+        # 尝试从token中获取用户ID（不验证有效性）
+        try:
+            # 使用依赖注入容器获取JWT服务
+            jwt_service = user_service._jwt_service
+            
+            # 直接解码token（不验证有效性）
+            payload = jwt_service.decode_token(access_token)
+            user_id = payload.get("user_id")
+        except Exception:
+            # Token无效或过期，但仍继续处理logout
+            pass
+    
+    # 执行logout操作（即使token无效也要尝试清理）
+    if access_token:
+        try:
+            if user_id:
+                # 如果有用户ID，使用完整的logout流程
+                await user_service.logout_user(user_id, access_token, None)
+            else:
+                # 如果没有用户ID，至少尝试将token加入黑名单
+                jwt_service = user_service._jwt_service
+                await jwt_service.blacklist_token(access_token)
+        except Exception as e:
+            # 即使logout服务失败，也返回成功（前端会清理本地token）
+            print(f"Logout service error (ignored): {e}")
+            pass
+
+    return ApiResponse.success_response(
+        message="登出成功"
+    )
+
+
+@router.post("/public-send-verification-code", response_model=ApiResponse)
+async def public_send_verification_code(
+        http_request: Request,
+        user_service: UserApplicationService = Depends(get_user_service)
+) -> ApiResponse:
+    """发送验证码（公开端点，严格验证）"""
+    client_ip = http_request.client.host
+    
+    # 手动解析请求体以进行严格验证
+    try:
+        body = await http_request.json()
+        email = body.get("email", "")
+        purpose = body.get("purpose", "")
+        
+        # 严格的邮箱验证
+        from pydantic import EmailStr, ValidationError as PydanticValidationError
+        
+        # 验证邮箱格式
+        try:
+            validated_email = EmailStr._validate(email, None)
+        except (PydanticValidationError, ValueError, TypeError) as e:
+            raise HTTPException(
+                status_code=422, 
+                detail="请输入有效的邮箱地址"
+            )
+        
+        # 验证purpose
+        if purpose not in ["register", "reset_password"]:
+            raise HTTPException(
+                status_code=422, 
+                detail="无效的验证码用途"
+            )
+        
+        # 检查IP频率限制（3分钟）
+        message = await user_service.send_verification_code_with_rate_limit(
+            email=validated_email, 
+            purpose=purpose, 
+            client_ip=client_ip
+        )
+        
+        return ApiResponse.success_response(message=message)
+        
+    except HTTPException:
+        raise
+    except ValueError as e:
+        # 频率限制或其他业务错误
+        raise HTTPException(status_code=429, detail=str(e))
+    except Exception as e:
+        # 其他错误
+        raise HTTPException(status_code=400, detail="请求格式错误")

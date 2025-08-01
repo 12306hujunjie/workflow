@@ -7,7 +7,11 @@ from ..application.services.user_application_service import UserApplicationServi
 from ..infrastructure.repositories.sqlalchemy_user_repository import SQLAlchemyUserRepository
 from shared_kernel.infrastructure.database.async_session import db_config
 from shared_kernel.infrastructure.email_service import MockEmailService, SMTPEmailService
+from shared_kernel.infrastructure.verification_code_service import VerificationCodeService
+from shared_kernel.infrastructure.redis_service import RedisService
+from shared_kernel.infrastructure.rate_limit_service import RateLimitService
 from config.email_settings import email_settings
+from config.settings import get_settings
 from container import container
 
 
@@ -43,9 +47,17 @@ async def get_user_service(
         email_config = email_settings.to_email_config()
         email_service = SMTPEmailService(email_config)
     
+    # 创建Redis服务和相关服务
+    settings = get_settings()
+    redis_service = RedisService(settings.redis_url)
+    verification_code_service = VerificationCodeService(redis_service)
+    rate_limit_service = RateLimitService(redis_service)
+    
     return UserApplicationService(
         user_repository=user_repository,
         password_service=password_service,
         jwt_service=jwt_service,
-        email_service=email_service
+        email_service=email_service,
+        verification_code_service=verification_code_service,
+        rate_limit_service=rate_limit_service
     )

@@ -15,7 +15,7 @@ interface AuthStore {
   
   // Actions
   login: (usernameOrEmail: string, password: string) => Promise<void>;
-  register: (username: string, email: string, password: string) => Promise<void>;
+  register: (username: string, email: string, password: string, code: string) => Promise<void>;
   logout: () => Promise<void>;
   refreshAccessToken: () => Promise<void>;
   updateProfile: (data: any) => Promise<void>;
@@ -63,10 +63,10 @@ export const useAuthStore = create<AuthStore>()(
         }
       },
 
-      register: async (username: string, email: string, password: string) => {
+      register: async (username: string, email: string, password: string, code: string) => {
         set({ isLoading: true, error: null });
         try {
-          const response = await authService.register(username, email, password);
+          const response = await authService.register(username, email, password, code);
           const { user, access_token, refresh_token } = response;
 
           // 保存token到localStorage
