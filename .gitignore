@@ -181,9 +181,9 @@ frontend/.env.local
 frontend/.env.production
 
 # Backend temp files
-workflow-platform/.env
-workflow-platform/.env.local
-workflow-platform/.env.production
+workflow_platform/.env
+workflow_platform/.env.local
+workflow_platform/.env.production
 
 # Database files
 *.db

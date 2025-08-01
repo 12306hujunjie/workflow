@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Form,
   Input,
@@ -36,17 +36,38 @@ const LoginPage: React.FC = () => {
   // 获取重定向路径
   const from = (location.state as any)?.from?.pathname || '/dashboard';
 
+  // 页面加载时恢复记住我状态和保存的凭据
+  useEffect(() => {
+    const savedRememberMe = localStorage.getItem('remember_me') === 'true';
+    setRememberMe(savedRememberMe);
+    
+    if (savedRememberMe) {
+      const savedUsername = localStorage.getItem('saved_username');
+      const savedPassword = localStorage.getItem('saved_password');
+      
+      if (savedUsername && savedPassword) {
+        form.setFieldsValue({
+          usernameOrEmail: savedUsername,
+          password: savedPassword,
+        });
+      }
+    }
+  }, [form]);
+
   // 处理表单提交
   const handleSubmit = async (values: LoginFormData) => {
     try {
       await login(values.usernameOrEmail, values.password);
       
-      // 如果选择记住我，设置更长的token过期时间
+      // 如果选择记住我，保存凭据和状态
       if (rememberMe) {
-        // 这里可以设置更长的token过期时间
         localStorage.setItem('remember_me', 'true');
+        localStorage.setItem('saved_username', values.usernameOrEmail);
+        localStorage.setItem('saved_password', values.password);
       } else {
         localStorage.removeItem('remember_me');
+        localStorage.removeItem('saved_username');
+        localStorage.removeItem('saved_password');
       }
       
       // 登录成功后重定向

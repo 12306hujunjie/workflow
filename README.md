@@ -31,7 +31,7 @@
 ```bash
 # 克隆项目
 git clone https://github.com/12306hujunjie/workflow.git
-cd workflow/workflow-platform
+cd workflow/workflow_platform
 
 # 安装依赖
 pip install -r requirements.txt
@@ -50,7 +50,7 @@ uvicorn api_gateway.main:app --reload
 - [用户模块API](docs/user-module-api.md) - 用户认证和管理API
 - [开发规则](docs/workflow/DEVELOPMENT_RULES.md) - 开发规范和最佳实践
 - [Git工作流](docs/workflow/GIT_WORKFLOW.md) - 代码提交和分支管理
-- [后端详细说明](workflow-platform/README.md) - 后端项目具体信息
+- [后端详细说明](workflow_platform/README.md) - 后端项目具体信息
 
 ## 项目结构
 
@@ -100,7 +100,7 @@ workflow/
 
 ```bash
 # 运行单元测试
-cd workflow-platform
+cd workflow_platform
 pytest tests/unit -v
 
 # 运行所有测试并生成覆盖率

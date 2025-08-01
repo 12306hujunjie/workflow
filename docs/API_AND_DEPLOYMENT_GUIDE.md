@@ -270,7 +270,7 @@ cd workflow
 
 **创建虚拟环境**:
 ```bash
-cd workflow-platform
+cd workflow_platform
 python3 -m venv .venv
 source .venv/bin/activate  # Linux/macOS
 # 或
@@ -336,7 +336,7 @@ echo "VITE_API_BASE_URL=http://localhost:8001/api/v1" > .env.local
 
 **使用Docker启动数据库**:
 ```bash
-cd workflow-platform
+cd workflow_platform
 docker-compose up -d postgres redis
 ```
 
@@ -353,7 +353,7 @@ alembic upgrade head
 
 **启动后端服务**:
 ```bash
-# 在 workflow-platform 目录下
+# 在 workflow_platform 目录下
 source .venv/bin/activate
 python3 -m uvicorn api_gateway.main:app --host 0.0.0.0 --port 8001 --reload
 ```
@@ -376,8 +376,8 @@ npm run dev
 **构建镜像**:
 ```bash
 # 后端镜像
-cd workflow-platform
-docker build -t workflow-platform:latest .
+cd workflow_platform
+docker build -t workflow_platform:latest .
 
 # 前端镜像
 cd frontend
@@ -474,7 +474,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: workflow-config
-  namespace: workflow-platform
+  namespace: workflow_platform
 data:
   API_HOST: "0.0.0.0"
   API_PORT: "8000"
@@ -489,7 +489,7 @@ apiVersion: v1
 kind: Secret
 metadata:
   name: workflow-secrets
-  namespace: workflow-platform
+  namespace: workflow_platform
 type: Opaque
 data:
   jwt-secret: <base64-encoded-jwt-secret>
@@ -504,7 +504,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: workflow-backend
-  namespace: workflow-platform
+  namespace: workflow_platform
 spec:
   replicas: 3
   selector:
@@ -545,7 +545,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: workflow-backend-service
-  namespace: workflow-platform
+  namespace: workflow_platform
 spec:
   selector:
     app: workflow-backend
@@ -563,17 +563,17 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: workflow-ingress
-  namespace: workflow-platform
+  namespace: workflow_platform
   annotations:
     kubernetes.io/ingress.class: nginx
     cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   tls:
   - hosts:
-    - api.workflow-platform.com
+    - api.workflow_platform.com
     secretName: workflow-tls
   rules:
-  - host: api.workflow-platform.com
+  - host: api.workflow_platform.com
     http:
       paths:
       - path: /
@@ -590,7 +590,7 @@ spec:
 **AWS ECS 部署**:
 ```json
 {
-  "family": "workflow-platform",
+  "family": "workflow_platform",
   "networkMode": "awsvpc",
   "requiresCompatibilities": ["FARGATE"],
   "cpu": "512",
@@ -599,7 +599,7 @@ spec:
   "containerDefinitions": [
     {
       "name": "workflow-backend",
-      "image": "your-account.dkr.ecr.region.amazonaws.com/workflow-platform:latest",
+      "image": "your-account.dkr.ecr.region.amazonaws.com/workflow_platform:latest",
       "portMappings": [
         {
           "containerPort": 8000,
@@ -615,7 +615,7 @@ spec:
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
-          "awslogs-group": "/ecs/workflow-platform",
+          "awslogs-group": "/ecs/workflow_platform",
           "awslogs-region": "us-west-2",
           "awslogs-stream-prefix": "ecs"
         }
@@ -636,7 +636,7 @@ global:
   scrape_interval: 15s
 
 scrape_configs:
-  - job_name: 'workflow-platform'
+  - job_name: 'workflow_platform'
     static_configs:
       - targets: ['backend:8000']
     metrics_path: '/metrics'
@@ -1019,10 +1019,10 @@ redis-cli monitor
 **应用日志分析**:
 ```bash
 # 查看应用日志
-tail -f /var/log/workflow-platform/app.log
+tail -f /var/log/workflow_platform/app.log
 
 # 过滤错误日志
-grep "ERROR" /var/log/workflow-platform/app.log
+grep "ERROR" /var/log/workflow_platform/app.log
 
 # 分析访问模式
 awk '{print $1}' /var/log/nginx/access.log | sort | uniq -c | sort -nr

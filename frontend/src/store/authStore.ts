@@ -100,6 +100,15 @@ export const useAuthStore = create<AuthStore>()(
           // 清除所有状态
           localStorage.removeItem('access_token');
           localStorage.removeItem('refresh_token');
+          
+          // 如果没有选择记住我，也清除保存的凭据
+          const rememberMe = localStorage.getItem('remember_me') === 'true';
+          if (!rememberMe) {
+            localStorage.removeItem('saved_username');
+            localStorage.removeItem('saved_password');
+            localStorage.removeItem('remember_me');
+          }
+          
           set({
             user: null,
             accessToken: null,

@@ -4,13 +4,13 @@ on:
   push:
     branches: [ master, main ]
     paths:
-      - 'workflow-platform/**'
+      - '../../workflow_platform/**'
       - 'frontend/**'
       - '.github/workflows/api-validation-ci.yml'
   pull_request:
     branches: [ master, main ]
     paths:
-      - 'workflow-platform/**'
+      - '../../workflow_platform/**'
       - 'frontend/**'
 
 jobs:
@@ -44,7 +44,7 @@ jobs:
     
     defaults:
       run:
-        working-directory: workflow-platform
+        working-directory: workflow_platform
 
     steps:
     - uses: actions/checkout@v3
@@ -58,7 +58,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('workflow-platform/requirements*.txt') }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('workflow_platform/requirements*.txt') }}
         restore-keys: |
           ${{ runner.os }}-pip-
     

@@ -369,9 +369,9 @@ mv ARCHITECTURE_REFACTOR_PLAN.md docs/historical/reports/refactor-plan.md
 
 # Phase 5: Move setup docs
 echo "📚 Organizing setup documentation..."
-mv workflow-platform/docs/postgresql_setup.md docs/setup/
-mv workflow-platform/docs/github-actions-setup.md docs/setup/
-mv workflow-platform/docs/email_verification_design.md docs/setup/
+mv workflow_platform/docs/postgresql_setup.md docs/setup/
+mv workflow_platform/docs/github-actions-setup.md docs/setup/
+mv workflow_platform/docs/email_verification_design.md docs/setup/
 
 # Phase 6: Create consolidated integration testing doc
 echo "🔄 Creating consolidated integration testing documentation..."

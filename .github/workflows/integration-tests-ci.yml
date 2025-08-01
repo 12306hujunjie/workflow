@@ -4,12 +4,12 @@ on:
   push:
     branches: [ master, main ]
     paths:
-      - 'workflow-platform/**'
+      - '../../workflow_platform/**'
       - '.github/workflows/integration-tests-ci.yml'
   pull_request:
     branches: [ master, main ]
     paths:
-      - 'workflow-platform/**'
+      - '../../workflow_platform/**'
 
 jobs:
   integration-test:
@@ -42,7 +42,7 @@ jobs:
     
     defaults:
       run:
-        working-directory: workflow-platform
+        working-directory: workflow_platform
 
     steps:
     - uses: actions/checkout@v3
@@ -56,7 +56,7 @@ jobs:
       uses: actions/cache@v3
       with:
         path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('workflow-platform/requirements*.txt') }}
+        key: ${{ runner.os }}-pip-${{ hashFiles('workflow_platform/requirements*.txt') }}
         restore-keys: |
           ${{ runner.os }}-pip-
     
@@ -85,7 +85,7 @@ jobs:
       uses: codecov/codecov-action@v3
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
-        file: ./workflow-platform/coverage.xml
+        file: ./workflow_platform/coverage.xml
         flags: integration-tests
         name: integration-tests-coverage
         fail_ci_if_error: false

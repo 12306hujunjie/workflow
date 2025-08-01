@@ -4,7 +4,7 @@
  * This file contains centralized password validation logic that is
  * EXACTLY synchronized with the backend validation rules.
  * 
- * Backend source: workflow-platform/bounded_contexts/user_management/presentation/schemas/user_schemas.py
+ * Backend source: workflow_platform/bounded_contexts/user_management/presentation/schemas/user_schemas.py
  * Line 16: has_special = any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in v)
  */
 

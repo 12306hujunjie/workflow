@@ -55,18 +55,18 @@ workflow-platform/tests/
 ### **Quick Test Commands:**
 ```bash
 # Run all integration tests
-pytest workflow-platform/tests/integration/
+pytest workflow_platform/tests/integration/
 
 # Run specific test category
-pytest workflow-platform/tests/integration/api/
-pytest workflow-platform/tests/integration/auth/
-pytest workflow-platform/tests/integration/e2e/
+pytest workflow_platform/tests/integration/api/
+pytest workflow_platform/tests/integration/auth/
+pytest workflow_platform/tests/integration/e2e/
 
 # Run with verbose output
-pytest workflow-platform/tests/integration/ -v
+pytest workflow_platform/tests/integration/ -v
 
 # Run specific test function
-pytest workflow-platform/tests/integration/api/test_comprehensive_api.py::IntegrationTestSuite::test_backend_health_check
+pytest workflow_platform/tests/integration/api/test_comprehensive_api.py::IntegrationTestSuite::test_backend_health_check
 ```
 
 ### **Prerequisites:**

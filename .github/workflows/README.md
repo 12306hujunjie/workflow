@@ -46,7 +46,7 @@
 
 ```bash
 # 进入项目目录
-cd workflow-platform
+cd workflow_platform
 
 # 安装依赖
 pip install -r requirements.txt
